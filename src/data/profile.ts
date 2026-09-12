@@ -14,6 +14,13 @@ export const profile = {
     backend: ["Node.js", "Express", "MongoDB"],
     tools: ["Git", "Vite", "VS Code"],
   },
+  timeline: [
+    { year: "2024", label: "JEE 2024" },
+    { year: "2024", label: "Joined Thapar Institute" },
+    { year: "2025", label: "Started building projects" },
+    { year: "2025", label: "Registered for GSSoC" },
+    { year: "Now", label: "Current focus" },
+  ],
   stats: [
     { label: "LeetCode problems solved", value: "200+" },
     { label: "Contest rating", value: "1540" },

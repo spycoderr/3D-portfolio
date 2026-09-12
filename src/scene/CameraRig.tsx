@@ -61,13 +61,14 @@ function plotPose(plot: Plot, mode: CameraMode, isMobile: boolean): Pose {
   if (interior) distance *= FOCUS.interiorDistanceFactor
   const elevation = interior ? FOCUS.interiorElevation : FOCUS.elevation
 
-  // Buildings face the estate centre, so the outward radial direction is where a
-  // visitor would stand to see the front. Taken from position rather than the
-  // stored rotation so it stays correct whenever plots are moved.
+  // Buildings face the estate centre, so the camera belongs on the inward side,
+  // out over the road where a visitor would stand to see the front door. Taken
+  // from position rather than the stored rotation so it stays correct whenever
+  // plots are moved.
   const outward = base.clone().setY(0)
   if (outward.lengthSq() === 0) outward.set(0, 0, 1)
   outward.normalize()
-  const azimuth = Math.atan2(outward.x, outward.z) + FOCUS.azimuthOffset
+  const azimuth = Math.atan2(-outward.x, -outward.z) + FOCUS.azimuthOffset
 
   const target = new Vector3(
     base.x,

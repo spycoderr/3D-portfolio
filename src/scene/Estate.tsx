@@ -5,8 +5,10 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useEstate } from '@/store/useEstate'
 import { CameraRig } from './CameraRig'
 import { CAMERA, COLORS, UI } from './constants'
+import { Buildings } from './Building'
 import { Ground } from './Ground'
 import { Lighting } from './Lighting'
+import { Props } from './Props'
 import { Road } from './Road'
 import { Traffic } from './Traffic'
 
@@ -91,6 +93,8 @@ export function Estate() {
             <Lighting />
             <Ground />
             <Road />
+            <Props />
+            <Buildings />
             <Traffic />
             <CameraRig />
             <WarmUp onReady={() => setReady(true)} />

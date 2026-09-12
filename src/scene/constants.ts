@@ -4,7 +4,6 @@ export const SCENE = {
   // Control radii for the ring road loop. Varying them gives the curvature the
   // cars bank into; the list is fixed so the layout is identical every load.
   roadControlRadii: [11.9, 11.4, 10.9, 10.8, 11.1, 11.7, 11.8, 11.2],
-  plotRingRadius: 16.5,
   groundRadius: 20,
   groundSegments: 96,
   // Plinth reads as the table the model sits on. Its top sits below the grass
@@ -126,6 +125,38 @@ export const LIGHTING = {
   shadowFar: 80,
 } as const
 
+// The park inside the ring road, and the estate dressing around it.
+export const PARK = {
+  pondCentre: [-1.8, -1.5] as [number, number],
+  pondRadius: 3.0,
+  pondY: 0.025,
+  pathInnerRadius: 5.0,
+  pathOuterRadius: 5.9,
+  pathY: 0.022,
+  benchCount: 4,
+  benchRadius: 4.2,
+} as const
+
+export const ESTATE = {
+  treeCount: 56,
+  treeSeed: 20280512,
+  treeClearanceFromRoad: 2.4,
+  treeClearanceFromPlot: 3.4,
+  treeClearanceFromPond: 1.2,
+  treeMinSpacing: 1.5,
+  lampCount: 14,
+  lampHeight: 1.5,
+  hedgeRadius: 18.9,
+  hedgeTube: 0.34,
+  hedgeSquash: 0.55,
+  gateU: 0.52,
+  gatePillarHeight: 1.9,
+  gateArchHeight: 0.26,
+  noticeBoardWidth: 1.5,
+  noticeBoardHeight: 0.95,
+  noticeBoardPostHeight: 0.75,
+} as const
+
 // Colors (hex)
 export const COLORS = {
   sky: "#cfe0ea",
@@ -142,6 +173,14 @@ export const COLORS = {
   windowDark: "#2a3a4a",
   windowLight: "#e8f0f8",
   plinth: "#bdb7a6",
+  pad: "#9cc077",
+  padHighlight: "#b6d68f",
+  water: "#6f9fb5",
+  path: "#d8d0bd",
+  trunk: "#7a5b42",
+  foliage: "#5c8a4a",
+  foliageDark: "#4a7440",
+  hedge: "#587f45",
 } as const
 
 // Typography (px)
@@ -171,10 +210,35 @@ export const UI = {
 
 // Building defaults
 export const BUILDING = {
-  floorHeight: 2.6,
-  defaultWallColor: COLORS.sand,
-  defaultTrimColor: COLORS.ink,
-  windowFrameThickness: 0.08,
-  doorCanopyDepth: 0.2,
-  doorStepHeight: 0.15,
+  floorHeight: 1.55,
+  // The pad gives each building an address. It clears the grass by more than
+  // the z-fighting margin rather than sitting on it.
+  padMargin: 0.6,
+  padBaseY: 0.02,
+  padHeight: 0.08,
+  // Each storey steps in slightly, so stacked floors read as a building rather
+  // than one extruded box.
+  setback: 0.13,
+  roofHeight: 0.82,
+  hipInset: 0.28,
+  parapetHeight: 0.26,
+  parapetThickness: 0.1,
+  railingHeight: 0.34,
+  railingThickness: 0.06,
+  windowWidth: 0.46,
+  windowHeight: 0.6,
+  windowRecess: 0.06,
+  windowSpacing: 0.92,
+  windowSillHeight: 0.62,
+  frameThickness: 0.06,
+  frameDepth: 0.07,
+  doorWidth: 0.6,
+  doorHeight: 1.1,
+  doorStepHeight: 0.07,
+  doorStepDepth: 0.3,
+  canopyDepth: 0.4,
+  canopyThickness: 0.07,
+  nameplateWidth: 0.44,
+  nameplateHeight: 0.26,
+  nameplatePostHeight: 0.5,
 } as const

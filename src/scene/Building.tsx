@@ -1,0 +1,531 @@
+import { useLayoutEffect, useMemo, useRef } from 'react'
+import {
+  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  CanvasTexture,
+  CylinderGeometry,
+  Euler,
+  InstancedMesh,
+  Matrix4,
+  Color,
+  MeshLambertMaterial,
+  PlaneGeometry,
+  Quaternion,
+  SRGBColorSpace,
+  Vector3,
+} from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { plots, type Plot } from '@/data/plots'
+import { BUILDING, COLORS } from './constants'
+
+// One material per colour, shared by every building that uses it.
+const materialCache = new Map<string, MeshLambertMaterial>()
+
+function material(colour: string): MeshLambertMaterial {
+  let found = materialCache.get(colour)
+  if (!found) {
+    found = new MeshLambertMaterial({ color: colour })
+    materialCache.set(colour, found)
+  }
+  return found
+}
+
+export const padMaterial = material(COLORS.pad)
+export const padHighlightMaterial = material(COLORS.padHighlight)
+
+function box(w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
+  const geometry = new BoxGeometry(w, h, d)
+  geometry.translate(x, y, z)
+  return geometry
+}
+
+function cylinder(radius: number, height: number, x: number, y: number, z: number, segments = 12) {
+  const geometry = new CylinderGeometry(radius, radius, height, segments)
+  geometry.translate(x, y, z)
+  return geometry
+}
+
+// Sources are disposed after merging: they exist only to be folded in.
+function mergeParts(parts: BufferGeometry[]): BufferGeometry {
+  const merged = mergeGeometries(parts, false)
+  parts.forEach((part) => part.dispose())
+  return merged
+}
+
+// Baking the colour into vertices lets one building's walls, roof and trim
+// merge into a single mesh, which is what keeps the estate inside its draw-call
+// budget. Color converts sRGB to working space on construction, so these values
+// are already linear.
+function tint(geometry: BufferGeometry, colour: string): BufferGeometry {
+  const value = new Color(colour)
+  const count = geometry.attributes.position.count
+  const colours = new Float32Array(count * 3)
+  for (let index = 0; index < count; index += 1) {
+    colours[index * 3] = value.r
+    colours[index * 3 + 1] = value.g
+    colours[index * 3 + 2] = value.b
+  }
+  geometry.setAttribute('color', new BufferAttribute(colours, 3))
+  return geometry
+}
+
+const shellMaterial = new MeshLambertMaterial({ vertexColors: true })
+
+// A pitched roof built from its own vertices so the slopes stay flat-shaded.
+// The ridge inset is what separates a gable (zero) from a hip (positive).
+function pitchedRoof(w: number, d: number, height: number, inset: number): BufferGeometry {
+  const hw = w / 2
+  const hd = d / 2
+  const ridgeLeft: [number, number, number] = [-hw + inset * w, height, 0]
+  const ridgeRight: [number, number, number] = [hw - inset * w, height, 0]
+
+  const positions: number[] = []
+  const triangle = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number],
+  ) => positions.push(...a, ...b, ...c)
+  const quad = (
+    a: [number, number, number],
+    b: [number, number, number],
+    c: [number, number, number],
+    e: [number, number, number],
+  ) => {
+    triangle(a, b, c)
+    triangle(a, c, e)
+  }
+
+  quad([-hw, 0, hd], [hw, 0, hd], ridgeRight, ridgeLeft)
+  quad([hw, 0, -hd], [-hw, 0, -hd], ridgeLeft, ridgeRight)
+  triangle([-hw, 0, -hd], [-hw, 0, hd], ridgeLeft)
+  triangle([hw, 0, hd], [hw, 0, -hd], ridgeRight)
+
+  const vertexCount = positions.length / 3
+  const geometry = new BufferGeometry()
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
+  // Nothing here is textured, but merging refuses to combine geometries whose
+  // attributes differ, and box and cylinder parts both carry UVs and an index.
+  // The index stays sequential so vertices remain unshared and shading flat.
+  geometry.setAttribute('uv', new BufferAttribute(new Float32Array(vertexCount * 2), 2))
+  geometry.setIndex(Array.from({ length: vertexCount }, (_, index) => index))
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function parapetRing(w: number, d: number, y: number): BufferGeometry[] {
+  const t = BUILDING.parapetThickness
+  const h = BUILDING.parapetHeight
+  return [
+    box(w, h, t, 0, y + h / 2, d / 2 - t / 2),
+    box(w, h, t, 0, y + h / 2, -d / 2 + t / 2),
+    box(t, h, d - t * 2, w / 2 - t / 2, y + h / 2, 0),
+    box(t, h, d - t * 2, -w / 2 + t / 2, y + h / 2, 0),
+  ]
+}
+
+type BuildingParts = {
+  pad: BufferGeometry
+  shell: BufferGeometry
+  windows: Matrix4[]
+}
+
+const PAD_TOP = BUILDING.padBaseY + BUILDING.padHeight
+
+function storeySize(plot: Plot, storey: number) {
+  return {
+    w: plot.footprint.w - storey * 2 * BUILDING.setback,
+    d: plot.footprint.d - storey * 2 * BUILDING.setback,
+  }
+}
+
+function composeBuilding(plot: Plot): BuildingParts {
+  const walls: BufferGeometry[] = []
+  const accent: BufferGeometry[] = []
+  const trim: BufferGeometry[] = []
+  const windows: Matrix4[] = []
+
+  const { w, d } = plot.footprint
+  const wallTop = PAD_TOP + plot.floors * BUILDING.floorHeight
+
+  for (let storey = 0; storey < plot.floors; storey += 1) {
+    const size = storeySize(plot, storey)
+    const centreY = PAD_TOP + storey * BUILDING.floorHeight + BUILDING.floorHeight / 2
+    walls.push(box(size.w, BUILDING.floorHeight, size.d, 0, centreY, 0))
+  }
+
+  const top = storeySize(plot, plot.floors - 1)
+  const overhang = 0.18
+
+  if (plot.roofStyle === 'gable' || plot.roofStyle === 'hip') {
+    const inset = plot.roofStyle === 'hip' ? BUILDING.hipInset : 0
+    const roof = pitchedRoof(
+      top.w + overhang * 2,
+      top.d + overhang * 2,
+      BUILDING.roofHeight,
+      inset,
+    )
+    roof.translate(0, wallTop, 0)
+    accent.push(roof)
+  } else {
+    const slabHeight = 0.12
+    accent.push(box(top.w + overhang, slabHeight, top.d + overhang, 0, wallTop + slabHeight / 2, 0))
+    const deckY = wallTop + slabHeight
+
+    if (plot.roofStyle === 'flat') {
+      accent.push(...parapetRing(top.w + overhang, top.d + overhang, deckY))
+    } else {
+      // Terrace: railing on three sides leaves the front open, and a small
+      // stair housing explains how anyone gets up there.
+      const t = BUILDING.railingThickness
+      const h = BUILDING.railingHeight
+      const rw = top.w + overhang
+      const rd = top.d + overhang
+      trim.push(box(rw, h, t, 0, deckY + h / 2, -rd / 2 + t / 2))
+      trim.push(box(t, h, rd - t * 2, rw / 2 - t / 2, deckY + h / 2, 0))
+      trim.push(box(t, h, rd - t * 2, -rw / 2 + t / 2, deckY + h / 2, 0))
+      accent.push(box(0.7, 0.62, 0.7, -rw / 2 + 0.55, deckY + 0.31, -rd / 2 + 0.55))
+    }
+  }
+
+  // Door, step and canopy on the face that looks back at the estate centre.
+  const front = d / 2
+  trim.push(box(BUILDING.doorWidth, BUILDING.doorHeight, 0.08, 0, PAD_TOP + BUILDING.doorHeight / 2, front - 0.02))
+  trim.push(
+    box(
+      BUILDING.doorWidth + 0.26,
+      BUILDING.doorStepHeight,
+      BUILDING.doorStepDepth,
+      0,
+      PAD_TOP + BUILDING.doorStepHeight / 2,
+      front + BUILDING.doorStepDepth / 2,
+    ),
+  )
+  trim.push(
+    box(
+      BUILDING.doorWidth + 0.5,
+      BUILDING.canopyThickness,
+      BUILDING.canopyDepth,
+      0,
+      PAD_TOP + BUILDING.doorHeight + 0.14,
+      front + BUILDING.canopyDepth / 2 - 0.06,
+    ),
+  )
+
+  // Flat and terrace roofs have a deck to stand things on; pitched ones do not,
+  // so roof-mounted props are only assigned to the former in the plot data.
+  const deckY = wallTop + 0.12
+
+  for (const prop of plot.props) {
+    if (prop === 'waterTank') {
+      const baseY = deckY
+      trim.push(cylinder(0.28, 0.42, top.w / 2 - 0.5, baseY + 0.35, -top.d / 2 + 0.5))
+      for (const [lx, lz] of [
+        [-0.16, -0.16],
+        [0.16, -0.16],
+        [-0.16, 0.16],
+        [0.16, 0.16],
+      ]) {
+        trim.push(box(0.05, 0.3, 0.05, top.w / 2 - 0.5 + lx, baseY + 0.15, -top.d / 2 + 0.5 + lz))
+      }
+    }
+    if (prop === 'acUnit') {
+      trim.push(box(0.42, 0.32, 0.24, top.w / 2 + 0.12, PAD_TOP + BUILDING.floorHeight * 0.7, -d / 4))
+    }
+    if (prop === 'dish') {
+      const dishY = deckY + 0.17
+      trim.push(cylinder(0.05, 0.34, -top.w / 2 + 0.45, dishY, top.d / 2 - 0.5))
+      const bowl = new CylinderGeometry(0.22, 0.06, 0.14, 12)
+      bowl.rotateX(-0.7)
+      bowl.translate(-top.w / 2 + 0.45, dishY + 0.24, top.d / 2 - 0.5)
+      trim.push(bowl)
+    }
+    if (prop === 'chimney') {
+      trim.push(
+        box(0.34, BUILDING.roofHeight + 0.5, 0.34, top.w / 2 - 0.6, wallTop + (BUILDING.roofHeight + 0.5) / 2, -top.d / 4),
+      )
+    }
+    if (prop === 'balcony' && plot.floors > 1) {
+      const size = storeySize(plot, 1)
+      const y = PAD_TOP + BUILDING.floorHeight
+      const depth = 0.5
+      accent.push(box(size.w * 0.62, 0.08, depth, 0, y + 0.04, size.d / 2 + depth / 2))
+      const t = BUILDING.railingThickness
+      const h = 0.3
+      trim.push(box(size.w * 0.62, h, t, 0, y + 0.08 + h / 2, size.d / 2 + depth - t / 2))
+      trim.push(box(t, h, depth, size.w * 0.31 - t / 2, y + 0.08 + h / 2, size.d / 2 + depth / 2))
+      trim.push(box(t, h, depth, -size.w * 0.31 + t / 2, y + 0.08 + h / 2, size.d / 2 + depth / 2))
+    }
+  }
+
+  // Window grid, derived from each storey's own face widths.
+  const rotation = new Euler()
+  const quaternion = new Quaternion()
+  const offset = new Vector3()
+  const scale = new Vector3(1, 1, 1)
+
+  for (let storey = 0; storey < plot.floors; storey += 1) {
+    const size = storeySize(plot, storey)
+    const centreY =
+      PAD_TOP + storey * BUILDING.floorHeight + BUILDING.windowSillHeight + BUILDING.windowHeight / 2
+
+    const faces = [
+      { span: size.w, depth: size.d / 2, rotY: 0, isFront: true },
+      { span: size.w, depth: size.d / 2, rotY: Math.PI, isFront: false },
+      { span: size.d, depth: size.w / 2, rotY: Math.PI / 2, isFront: false },
+      { span: size.d, depth: size.w / 2, rotY: -Math.PI / 2, isFront: false },
+    ]
+
+    for (const face of faces) {
+      const count = Math.max(1, Math.floor((face.span - 0.55) / BUILDING.windowSpacing))
+      const spacing = face.span / (count + 1)
+
+      for (let index = 0; index < count; index += 1) {
+        const along = -face.span / 2 + spacing * (index + 1)
+        // The door owns the middle of the front face on the ground storey.
+        if (face.isFront && storey === 0 && Math.abs(along) < BUILDING.doorWidth / 2 + 0.4) continue
+
+        rotation.set(0, face.rotY, 0)
+        quaternion.setFromEuler(rotation)
+        offset.set(along, 0, face.depth).applyQuaternion(quaternion)
+        offset.y = centreY
+
+        windows.push(new Matrix4().compose(offset.clone(), quaternion.clone(), scale))
+      }
+    }
+  }
+
+  const shell = [
+    ...walls.map((part) => tint(part, plot.palette.wall)),
+    ...accent.map((part) => tint(part, plot.palette.roof)),
+    ...trim.map((part) => tint(part, plot.palette.trim)),
+  ]
+
+  return {
+    pad: box(
+      w + BUILDING.padMargin * 2,
+      BUILDING.padHeight,
+      d + BUILDING.padMargin * 2,
+      0,
+      BUILDING.padBaseY + BUILDING.padHeight / 2,
+      0,
+    ),
+    shell: mergeParts(shell),
+    windows,
+  }
+}
+
+// Composed once per plot: the geometry is reused by both the building group and
+// the shared window mesh, which would otherwise each build their own copy.
+const buildingCache = new Map<string, BuildingParts>()
+
+function getBuilding(plot: Plot): BuildingParts {
+  let parts = buildingCache.get(plot.id)
+  if (!parts) {
+    parts = composeBuilding(plot)
+    buildingCache.set(plot.id, parts)
+  }
+  return parts
+}
+
+// Pane and frame share one instanced geometry through material groups, so every
+// window in the estate costs two draw calls in total rather than two per house.
+let windowGeometry: BufferGeometry | null = null
+
+function getWindowGeometry(): BufferGeometry {
+  if (windowGeometry) return windowGeometry
+
+  const w = BUILDING.windowWidth
+  const h = BUILDING.windowHeight
+  const t = BUILDING.frameThickness
+
+  // The origin sits on the wall surface. The pane clears it by a hair so it is
+  // never buried in the wall, and the frame stands proud of the pane, which is
+  // what reads as a recess without cutting an opening through the wall.
+  const paneZ = 0.012
+  const frameZ = paneZ + BUILDING.frameDepth / 2
+  const pane = box(w, h, 0.02, 0, 0, paneZ)
+  const frame = mergeGeometries(
+    [
+      box(w + t * 2, t, BUILDING.frameDepth, 0, h / 2 + t / 2, frameZ),
+      box(w + t * 2, t, BUILDING.frameDepth, 0, -h / 2 - t / 2, frameZ),
+      box(t, h, BUILDING.frameDepth, w / 2 + t / 2, 0, frameZ),
+      box(t, h, BUILDING.frameDepth, -w / 2 - t / 2, 0, frameZ),
+    ],
+    false,
+  )
+
+  windowGeometry = mergeGeometries([pane, frame], true)
+  return windowGeometry
+}
+
+const windowMaterials = [material(COLORS.windowDark), material(COLORS.kerb)]
+
+function BuildingGroup({ plot }: { plot: Plot }) {
+  const parts = getBuilding(plot)
+
+  return (
+    <group position={plot.position} rotation={[0, plot.rotation, 0]}>
+      <mesh geometry={parts.pad} material={padMaterial} receiveShadow castShadow={false} />
+      <mesh geometry={parts.shell} material={shellMaterial} castShadow receiveShadow />
+    </group>
+  )
+}
+
+function Windows({ matrices }: { matrices: Matrix4[] }) {
+  const meshRef = useRef<InstancedMesh>(null)
+  const geometry = getWindowGeometry()
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    matrices.forEach((matrix, index) => mesh.setMatrixAt(index, matrix))
+    mesh.instanceMatrix.needsUpdate = true
+  }, [matrices])
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[geometry, windowMaterials, matrices.length]}
+      castShadow={false}
+      receiveShadow={false}
+    />
+  )
+}
+
+export const buildingPlots = plots.filter((plot) => plot.kind !== 'contact')
+
+// Every plot number is drawn into one texture and every plate into one merged
+// geometry, so the whole set of nameplates costs a single draw call.
+const NAMEPLATE_COLUMNS = 3
+
+function createNameplateAtlas(): CanvasTexture {
+  const cell = 256
+  const rows = Math.ceil(buildingPlots.length / NAMEPLATE_COLUMNS)
+  const canvas = document.createElement('canvas')
+  canvas.width = NAMEPLATE_COLUMNS * cell
+  canvas.height = rows * cell
+
+  const context = canvas.getContext('2d')!
+  context.fillStyle = COLORS.paper
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = COLORS.ink
+  context.font = 'bold 52px sans-serif'
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+
+  buildingPlots.forEach((plot, index) => {
+    const column = index % NAMEPLATE_COLUMNS
+    const row = Math.floor(index / NAMEPLATE_COLUMNS)
+    context.fillText(plot.plotNumber, column * cell + cell / 2, row * cell + cell / 2)
+  })
+
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  return texture
+}
+
+function nameplateOffset(plot: Plot) {
+  return {
+    x: plot.footprint.w / 2 + 0.16,
+    z: plot.footprint.d / 2 + BUILDING.padMargin - 0.18,
+  }
+}
+
+function buildNameplates() {
+  const posts: BufferGeometry[] = []
+  const faces: BufferGeometry[] = []
+  const rows = Math.ceil(buildingPlots.length / NAMEPLATE_COLUMNS)
+  const plateY = BUILDING.nameplatePostHeight + BUILDING.nameplateHeight / 2
+
+  buildingPlots.forEach((plot, index) => {
+    const local = nameplateOffset(plot)
+
+    const post = mergeGeometries(
+      [
+        box(0.07, BUILDING.nameplatePostHeight, 0.07, local.x, BUILDING.nameplatePostHeight / 2, local.z),
+        box(
+          BUILDING.nameplateWidth + 0.06,
+          BUILDING.nameplateHeight + 0.06,
+          0.05,
+          local.x,
+          plateY,
+          local.z,
+        ),
+      ],
+      false,
+    )
+    post.rotateY(plot.rotation)
+    post.translate(plot.position[0], 0, plot.position[2])
+    posts.push(post)
+
+    const face = new PlaneGeometry(BUILDING.nameplateWidth, BUILDING.nameplateHeight)
+    const uv = face.attributes.uv as BufferAttribute
+    const column = index % NAMEPLATE_COLUMNS
+    const row = Math.floor(index / NAMEPLATE_COLUMNS)
+    for (let vertex = 0; vertex < uv.count; vertex += 1) {
+      // Canvas rows run top-down while V runs bottom-up, so the row flips.
+      uv.setXY(
+        vertex,
+        (column + uv.getX(vertex)) / NAMEPLATE_COLUMNS,
+        (rows - 1 - row + uv.getY(vertex)) / rows,
+      )
+    }
+    uv.needsUpdate = true
+    face.translate(local.x, plateY, local.z + 0.031)
+    face.rotateY(plot.rotation)
+    face.translate(plot.position[0], 0, plot.position[2])
+    faces.push(face)
+  })
+
+  return { posts: mergeParts(posts), faces: mergeParts(faces) }
+}
+
+let nameplates: { posts: BufferGeometry; faces: BufferGeometry; texture: CanvasTexture } | null = null
+
+function Nameplates() {
+  if (!nameplates) {
+    const built = buildNameplates()
+    nameplates = { ...built, texture: createNameplateAtlas() }
+  }
+
+  return (
+    <>
+      <mesh geometry={nameplates.posts} material={material(COLORS.ink)} castShadow receiveShadow />
+      <mesh geometry={nameplates.faces} castShadow={false} receiveShadow={false}>
+        <meshBasicMaterial map={nameplates.texture} />
+      </mesh>
+    </>
+  )
+}
+
+export function Buildings() {
+  // Window transforms are baked into world space once, since the instanced mesh
+  // lives outside each building's group.
+  const windowMatrices = useMemo(() => {
+    const all: Matrix4[] = []
+    const buildingMatrix = new Matrix4()
+    const quaternion = new Quaternion()
+    const scale = new Vector3(1, 1, 1)
+
+    for (const plot of buildingPlots) {
+      quaternion.setFromEuler(new Euler(0, plot.rotation, 0))
+      buildingMatrix.compose(new Vector3(...plot.position), quaternion, scale)
+      for (const local of getBuilding(plot).windows) {
+        all.push(new Matrix4().multiplyMatrices(buildingMatrix, local))
+      }
+    }
+
+    return all
+  }, [])
+
+  return (
+    <group>
+      {buildingPlots.map((plot) => (
+        <BuildingGroup key={plot.id} plot={plot} />
+      ))}
+      <Windows matrices={windowMatrices} />
+      <Nameplates />
+    </group>
+  )
+}

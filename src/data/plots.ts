@@ -13,6 +13,10 @@ export type Plot = {
   rotation: number
   footprint: { w: number; d: number }
   floors: number
+  // Roof shape and props are what make each building recognisable from the
+  // overview, so they are chosen per plot rather than generated.
+  roofStyle: 'gable' | 'hip' | 'flat' | 'terrace'
+  props: ('waterTank' | 'acUnit' | 'dish' | 'balcony' | 'chimney')[]
   palette: { wall: string; roof: string; trim: string }
   interior: {
     monitorContent: "chart" | "board" | "code" | "graph" | "docs"
@@ -26,7 +30,7 @@ export type Plot = {
 // ring never leaves a building pointing the wrong way.
 type PlotDefinition = Omit<Plot, 'position' | 'rotation'>
 
-const RING_RADIUS = 16.5
+const RING_RADIUS = 15.8
 const RING_START_ANGLE = Math.PI * 0.12
 
 function ringPlacement(index: number, total: number): Pick<Plot, 'position' | 'rotation'> {
@@ -49,8 +53,10 @@ const definitions: PlotDefinition[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["React", "Node.js", "MongoDB"],
     links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 3, d: 3 },
+    footprint: { w: 3.4, d: 2.8 },
     floors: 2,
+    roofStyle: 'gable',
+    props: ['chimney', 'acUnit'],
     palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
     interior: {
       monitorContent: "chart",
@@ -69,8 +75,10 @@ const definitions: PlotDefinition[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["React", "Express", "PostgreSQL"],
     links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 3, d: 3 },
+    footprint: { w: 3.0, d: 3.0 },
     floors: 2,
+    roofStyle: 'flat',
+    props: ['dish', 'balcony'],
     palette: { wall: "#e6ddca", roof: "#37506b", trim: "#1d2430" },
     interior: {
       monitorContent: "board",
@@ -89,8 +97,10 @@ const definitions: PlotDefinition[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["Python", "OpenCV", "TensorFlow"],
     links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 3, d: 3 },
+    footprint: { w: 3.8, d: 2.6 },
     floors: 1,
+    roofStyle: 'hip',
+    props: ['acUnit'],
     palette: { wall: "#e6ddca", roof: "#4e7a4a", trim: "#1d2430" },
     interior: {
       monitorContent: "code",
@@ -109,8 +119,10 @@ const definitions: PlotDefinition[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["React", "Node.js", "Git API"],
     links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 3, d: 3 },
+    footprint: { w: 2.8, d: 3.2 },
     floors: 2,
+    roofStyle: 'gable',
+    props: ['chimney', 'balcony'],
     palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
     interior: {
       monitorContent: "docs",
@@ -129,8 +141,10 @@ const definitions: PlotDefinition[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["IoT", "Node.js", "InfluxDB"],
     links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 3, d: 3 },
-    floors: 2,
+    footprint: { w: 3.7, d: 3.2 },
+    floors: 3,
+    roofStyle: 'terrace',
+    props: ['waterTank', 'dish'],
     palette: { wall: "#e6ddca", roof: "#37506b", trim: "#1d2430" },
     interior: {
       monitorContent: "graph",
@@ -149,8 +163,10 @@ const definitions: PlotDefinition[] = [
     highlights: [],
     stack: [],
     links: [],
-    footprint: { w: 4, d: 4 },
+    footprint: { w: 4.2, d: 3.4 },
     floors: 1,
+    roofStyle: 'hip',
+    props: ['chimney'],
     palette: { wall: "#e6ddca", roof: "#4e7a4a", trim: "#1d2430" },
     interior: {
       monitorContent: "docs",
@@ -173,8 +189,10 @@ const definitions: PlotDefinition[] = [
       { label: "GitHub", href: "https://github.com/spycoderr" },
       { label: "LinkedIn", href: "https://linkedin.com/in/nilabh-kishore-gupta" },
     ],
-    footprint: { w: 2, d: 2 },
+    footprint: { w: 2.0, d: 2.0 },
     floors: 1,
+    roofStyle: 'flat',
+    props: [],
     palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
     interior: {
       monitorContent: "docs",
