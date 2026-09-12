@@ -1,7 +1,10 @@
-// Scene geometry
+// Scene geometry. The estate reads from the middle out: park, ring road, then
+// the plots facing inward from beyond it.
 export const SCENE = {
-  roadRadius: 15,
-  estateRadius: 12,
+  // Control radii for the ring road loop. Varying them gives the curvature the
+  // cars bank into; the list is fixed so the layout is identical every load.
+  roadControlRadii: [11.9, 11.4, 10.9, 10.8, 11.1, 11.7, 11.8, 11.2],
+  plotRingRadius: 16.5,
   groundRadius: 20,
   groundSegments: 96,
   // Plinth reads as the table the model sits on. Its top sits below the grass
@@ -11,25 +14,53 @@ export const SCENE = {
   plinthHeight: 0.8,
 } as const
 
-// Road and traffic
+// Road. Every surface gets its own y so no two are ever coplanar.
 export const ROAD = {
   width: 2.4,
   laneOffset: 0.6,
+  kerbWidth: 0.35,
   dashLength: 0.6,
   dashGap: 0.4,
-  kerbHeight: 0.04,
-  kerbWidth: 0.3,
-  dashYOffset: 0.08,
-  roadYOffset: 0.06,
-  kerbYOffset: 0.03,
+  dashWidth: 0.11,
+  // Resolution of the ribbon. High enough that the outer edge reads as a smooth
+  // curve rather than a polygon at the closest camera distance.
+  segments: 260,
+  kerbY: 0.03,
+  roadY: 0.06,
+  dashY: 0.08,
+  arcLengthDivisions: 2000,
+} as const
+
+export const DRIVEWAY = {
+  width: 1.5,
+  // Above the kerb it crosses, below nothing else.
+  y: 0.05,
 } as const
 
 export const TRAFFIC = {
-  vehicleCount: 3,
-  baseSpeed: 8,
-  speedVariation: 0.15,
-  sinusoidalFreq: 1.2,
-  bankingAngle: 0.05,
+  // Two vehicles one way, one the other.
+  directions: [1, 1, -1],
+  startOffsets: [0, 0.42, 0.73],
+  speedScales: [1, 0.88, 0.95],
+  baseSpeed: 3.2,
+  // A touch of wander so they never look metronomic.
+  wanderAmplitude: 0.06,
+  wanderFrequency: 0.8,
+  maxBank: 0.052,
+  bankScale: 9,
+  bodyLength: 1.7,
+  bodyWidth: 0.8,
+  bodyHeight: 0.38,
+  bodyCentreY: 0.26,
+  cabinLength: 0.78,
+  cabinWidth: 0.68,
+  cabinHeight: 0.3,
+  cabinOffsetZ: -0.12,
+  wheelRadius: 0.13,
+  wheelWidth: 0.12,
+  track: 0.74,
+  wheelbase: 0.98,
+  colors: ['#c2603f', '#37506b', '#f3efe6'],
 } as const
 
 // Camera

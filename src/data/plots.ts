@@ -21,7 +21,23 @@ export type Plot = {
   }
 }
 
-export const plots: Plot[] = [
+// Placement is derived, not hand-written: every plot on the ring is spaced
+// evenly outside the road and turned to face the estate centre, so moving the
+// ring never leaves a building pointing the wrong way.
+type PlotDefinition = Omit<Plot, 'position' | 'rotation'>
+
+const RING_RADIUS = 16.5
+const RING_START_ANGLE = Math.PI * 0.12
+
+function ringPlacement(index: number, total: number): Pick<Plot, 'position' | 'rotation'> {
+  const angle = (index / total) * Math.PI * 2 + RING_START_ANGLE
+  return {
+    position: [Math.sin(angle) * RING_RADIUS, 0, Math.cos(angle) * RING_RADIUS],
+    rotation: angle + Math.PI,
+  }
+}
+
+const definitions: PlotDefinition[] = [
   {
     id: "spendsense",
     plotNumber: "Plot 01",
@@ -33,8 +49,6 @@ export const plots: Plot[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["React", "Node.js", "MongoDB"],
     links: [{ label: "GitHub", href: "#" }],
-    position: [8, 0, 0],
-    rotation: 0,
     footprint: { w: 3, d: 3 },
     floors: 2,
     palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
@@ -55,8 +69,6 @@ export const plots: Plot[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["React", "Express", "PostgreSQL"],
     links: [{ label: "GitHub", href: "#" }],
-    position: [5.7, 0, 5.7],
-    rotation: Math.PI / 4,
     footprint: { w: 3, d: 3 },
     floors: 2,
     palette: { wall: "#e6ddca", roof: "#37506b", trim: "#1d2430" },
@@ -77,8 +89,6 @@ export const plots: Plot[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["Python", "OpenCV", "TensorFlow"],
     links: [{ label: "GitHub", href: "#" }],
-    position: [0, 0, 8],
-    rotation: Math.PI / 2,
     footprint: { w: 3, d: 3 },
     floors: 1,
     palette: { wall: "#e6ddca", roof: "#4e7a4a", trim: "#1d2430" },
@@ -99,8 +109,6 @@ export const plots: Plot[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["React", "Node.js", "Git API"],
     links: [{ label: "GitHub", href: "#" }],
-    position: [-5.7, 0, 5.7],
-    rotation: (3 * Math.PI) / 4,
     footprint: { w: 3, d: 3 },
     floors: 2,
     palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
@@ -121,8 +129,6 @@ export const plots: Plot[] = [
     highlights: ["Placeholder", "Placeholder", "Placeholder"],
     stack: ["IoT", "Node.js", "InfluxDB"],
     links: [{ label: "GitHub", href: "#" }],
-    position: [-8, 0, 0],
-    rotation: Math.PI,
     footprint: { w: 3, d: 3 },
     floors: 2,
     palette: { wall: "#e6ddca", roof: "#37506b", trim: "#1d2430" },
@@ -143,8 +149,6 @@ export const plots: Plot[] = [
     highlights: [],
     stack: [],
     links: [],
-    position: [-5.7, 0, -5.7],
-    rotation: (5 * Math.PI) / 4,
     footprint: { w: 4, d: 4 },
     floors: 1,
     palette: { wall: "#e6ddca", roof: "#4e7a4a", trim: "#1d2430" },
@@ -169,8 +173,6 @@ export const plots: Plot[] = [
       { label: "GitHub", href: "https://github.com/spycoderr" },
       { label: "LinkedIn", href: "https://linkedin.com/in/nilabh-kishore-gupta" },
     ],
-    position: [5.7, 0, -5.7],
-    rotation: (7 * Math.PI) / 4,
     footprint: { w: 2, d: 2 },
     floors: 1,
     palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
@@ -181,3 +183,18 @@ export const plots: Plot[] = [
     },
   },
 ]
+
+// The noticeboard stands in the central park rather than on the ring, so it is
+// placed directly and takes no driveway.
+const CONTACT_PLACEMENT: Pick<Plot, 'position' | 'rotation'> = {
+  position: [3.4, 0, 4.2],
+  rotation: Math.PI * 0.18,
+}
+
+const ringDefinitions = definitions.filter((plot) => plot.kind !== 'contact')
+
+export const plots: Plot[] = definitions.map((definition) => {
+  if (definition.kind === 'contact') return { ...definition, ...CONTACT_PLACEMENT }
+  const index = ringDefinitions.indexOf(definition)
+  return { ...definition, ...ringPlacement(index, ringDefinitions.length) }
+})

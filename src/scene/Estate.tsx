@@ -7,6 +7,8 @@ import { CameraRig } from './CameraRig'
 import { CAMERA, COLORS, UI } from './constants'
 import { Ground } from './Ground'
 import { Lighting } from './Lighting'
+import { Road } from './Road'
+import { Traffic } from './Traffic'
 
 // Holds the reveal back until a few frames have actually rendered, so shaders
 // are compiled and the first frame the visitor sees is never a stutter.
@@ -88,6 +90,8 @@ export function Estate() {
           <Suspense fallback={null}>
             <Lighting />
             <Ground />
+            <Road />
+            <Traffic />
             <CameraRig />
             <WarmUp onReady={() => setReady(true)} />
           </Suspense>
