@@ -180,6 +180,16 @@ export const COLORS = {
   foliage: "#5c8a4a",
   foliageDark: "#4a7440",
   hedge: "#587f45",
+  wood: "#a88153",
+  woodDark: "#6f5233",
+  fabric: "#5b6b7c",
+  rug: "#b26a5e",
+  pot: "#b5765a",
+  leaf: "#4e8a52",
+  screenFrame: "#2a3038",
+  screenBg: "#12181f",
+  shelfBlock: "#c9b48c",
+  brass: "#c8a44e",
 } as const
 
 // Typography (px)
@@ -209,6 +219,50 @@ export const UI = {
   // Holding the hover briefly stops it flickering when the pointer crosses a
   // seam or passes between two buildings.
   hoverReleaseMs: 60,
+} as const
+
+// Opening a building: the roof leads, the near walls follow, and the whole
+// sequence is one orchestrated move rather than two independent tweens.
+export const REVEAL = {
+  durationSeconds: 0.9,
+  // Fractions of the sequence. The roof starts immediately and the walls a
+  // beat later, both finishing together.
+  roofSpan: 0.833,
+  wallDelay: 0.167,
+  wallSpan: 0.833,
+  roofLift: 1.15,
+  roofDrift: 0.12,
+  // Walls facing the camera thin out to this; walls edge-on stay solid.
+  wallMinOpacity: 0.08,
+  // Dot product at which a wall is treated as fully facing the camera.
+  wallFadeThreshold: 0.42,
+  wallThickness: 0.12,
+} as const
+
+// The furnished room inside the top storey, in units relative to that storey.
+export const INTERIOR = {
+  floorThickness: 0.06,
+  deskHeight: 0.44,
+  deskWidth: 1.15,
+  deskDepth: 0.5,
+  deskTopThickness: 0.05,
+  chairSeatHeight: 0.25,
+  monitorWidth: 0.52,
+  monitorHeight: 0.34,
+  monitorStandHeight: 0.1,
+  shelfWidth: 0.95,
+  shelfBoardThickness: 0.04,
+  shelfLowerY: 0.62,
+  shelfUpperY: 0.98,
+  blockSize: 0.14,
+  posterWidth: 0.62,
+  posterHeight: 0.42,
+  posterY: 0.95,
+  rugWidth: 1.25,
+  rugDepth: 0.95,
+  plantPotRadius: 0.13,
+  plantPotHeight: 0.17,
+  lampHeight: 0.3,
 } as const
 
 // Building defaults

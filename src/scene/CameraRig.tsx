@@ -74,11 +74,13 @@ function plotPose(plot: Plot, mode: CameraMode, isMobile: boolean): Pose {
   outward.normalize()
   const azimuth = Math.atan2(-outward.x, -outward.z) + FOCUS.azimuthOffset
 
-  const target = new Vector3(
-    base.x,
-    plot.floors * BUILDING.floorHeight * FOCUS.targetHeightFactor,
-    base.z,
-  )
+  // Aim at the top storey, which is the one that opens up into the room.
+  const roomY =
+    BUILDING.padBaseY +
+    BUILDING.padHeight +
+    (plot.floors - 1) * BUILDING.floorHeight +
+    BUILDING.floorHeight * FOCUS.targetHeightFactor
+  const target = new Vector3(base.x, roomY, base.z)
 
   const horizontal = Math.cos(elevation) * distance
   const position = new Vector3(

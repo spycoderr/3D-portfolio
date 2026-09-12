@@ -9,8 +9,12 @@ type EstateState = {
   // the wheel scrolls the page and a touch swipe scrolls it too.
   hasEngaged: boolean
   hoveredPlotId: string | null
+  // The plot whose interior is on screen. It outlives the selection, because
+  // the building has to stay open while the closing sequence plays out.
+  openPlotId: string | null
   engage: () => void
   setHovered: (id: string | null) => void
+  setOpenPlot: (id: string | null) => void
   selectPlot: (id: string) => void
   clearSelection: () => void
   enterInterior: () => void
@@ -22,10 +26,13 @@ export const useEstate = create<EstateState>()((set) => ({
   selectedPlotId: null,
   hasEngaged: false,
   hoveredPlotId: null,
+  openPlotId: null,
 
   engage: () => set({ hasEngaged: true }),
 
   setHovered: (id) => set({ hoveredPlotId: id }),
+
+  setOpenPlot: (id) => set({ openPlotId: id }),
 
   selectPlot: (id) => set({ mode: 'focused', selectedPlotId: id, hasEngaged: true }),
 

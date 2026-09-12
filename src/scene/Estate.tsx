@@ -8,6 +8,7 @@ import { CameraRig } from './CameraRig'
 import { CAMERA, COLORS, UI } from './constants'
 import { Buildings } from './Building'
 import { Ground } from './Ground'
+import { Interiors } from './Interior'
 import { Lighting } from './Lighting'
 import { Props } from './Props'
 import { Road } from './Road'
@@ -111,6 +112,7 @@ export function Estate() {
             <Road />
             <Props />
             <Buildings />
+            <Interiors />
             <Traffic />
             <CameraRig />
             <WarmUp onReady={() => setReady(true)} />
