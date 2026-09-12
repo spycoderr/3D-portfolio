@@ -90,14 +90,13 @@ export const CAMERA = {
 // How the camera frames a selected plot. Every value is derived from the plot's
 // own geometry, so no building ever needs a hand-placed camera.
 export const FOCUS = {
-  distanceScale: 2.6,
-  floorBonus: 1.2,
+  distanceScale: 2.8,
   elevation: 0.62,
   // Swings off the radial axis so two faces of the building are visible.
   azimuthOffset: 0.6,
   targetHeightFactor: 0.55,
   // Pushes the look-at point right so the building sits clear of the panel.
-  panelShiftFactor: 0.26,
+  panelShiftFactor: 0.22,
   minDistanceFactor: 0.6,
   maxDistanceFactor: 1.8,
   interiorDistanceFactor: 0.42,
@@ -202,10 +201,14 @@ export const UI = {
   // and the first visible frame is never a stutter.
   warmupFrames: 3,
   hoverLiftDistance: 0.15,
-  hoverLiftDuration: 0.3,
-  interactionThreshold: 6,
-  debounceHoverMs: 50,
-  buildingPadOffset: 0.08,
+  // Per-second decay for the lift. Frame-rate independent via
+  // 1 - decay^dt, which settles in roughly a third of a second.
+  hoverLiftDecay: 0.00002,
+  // Pointer travel between down and up beyond which it was a drag, not a click.
+  dragThresholdPx: 6,
+  // Holding the hover briefly stops it flickering when the pointer crosses a
+  // seam or passes between two buildings.
+  hoverReleaseMs: 60,
 } as const
 
 // Building defaults

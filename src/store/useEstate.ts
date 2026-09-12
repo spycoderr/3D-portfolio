@@ -8,7 +8,9 @@ type EstateState = {
   // Until the visitor deliberately engages, the canvas stays out of the way:
   // the wheel scrolls the page and a touch swipe scrolls it too.
   hasEngaged: boolean
+  hoveredPlotId: string | null
   engage: () => void
+  setHovered: (id: string | null) => void
   selectPlot: (id: string) => void
   clearSelection: () => void
   enterInterior: () => void
@@ -19,8 +21,11 @@ export const useEstate = create<EstateState>()((set) => ({
   mode: 'overview',
   selectedPlotId: null,
   hasEngaged: false,
+  hoveredPlotId: null,
 
   engage: () => set({ hasEngaged: true }),
+
+  setHovered: (id) => set({ hoveredPlotId: id }),
 
   selectPlot: (id) => set({ mode: 'focused', selectedPlotId: id, hasEngaged: true }),
 

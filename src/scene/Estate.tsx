@@ -1,5 +1,6 @@
-import { Suspense, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
+import { HoverLabel } from '@/components/ui/HoverLabel'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useEstate } from '@/store/useEstate'
@@ -64,11 +65,26 @@ function EngagementHint() {
 
 export function Estate() {
   const [ready, setReady] = useState(false)
+  const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
   const hasEngaged = useEstate((state) => state.hasEngaged)
+  const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
+  const clearSelection = useEstate((state) => state.clearSelection)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clearSelection()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [clearSelection])
 
   return (
-    <div className="relative h-full w-full bg-sky">
+    <div
+      ref={setContainer}
+      className="relative h-full w-full bg-sky"
+      style={{ cursor: hoveredPlotId ? 'pointer' : 'default' }}
+    >
       <div
         className="h-full w-full transition-opacity ease-out"
         style={{
@@ -109,6 +125,7 @@ export function Estate() {
       )}
 
       {ready && !hasEngaged && <EngagementHint />}
+      {ready && <HoverLabel container={container} />}
     </div>
   )
 }

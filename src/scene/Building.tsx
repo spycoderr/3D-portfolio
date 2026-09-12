@@ -1,5 +1,15 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
 import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react'
+import { useFrame } from '@react-three/fiber'
+import {
+  Box3,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -10,14 +20,20 @@ import {
   Matrix4,
   Color,
   MeshLambertMaterial,
+  Object3D,
   PlaneGeometry,
   Quaternion,
+  Ray,
+  Raycaster,
   SRGBColorSpace,
   Vector3,
+  type Intersection,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { plots, type Plot } from '@/data/plots'
-import { BUILDING, COLORS } from './constants'
+import { useCoarsePointer } from '@/hooks/useIsMobile'
+import { useEstate } from '@/store/useEstate'
+import { BUILDING, CAMERA, COLORS, UI } from './constants'
 
 // One material per colour, shared by every building that uses it.
 const materialCache = new Map<string, MeshLambertMaterial>()
@@ -361,19 +377,115 @@ function getWindowGeometry(): BufferGeometry {
 
 const windowMaterials = [material(COLORS.windowDark), material(COLORS.kerb)]
 
-function BuildingGroup({ plot }: { plot: Plot }) {
+// Replacing the shell's raycast with a single box test means the pointer hits
+// one simple volume per building instead of its walls, roof and props. There is
+// no gap to fall through between details, and nothing extra to draw.
+const rayInverse = new Matrix4()
+const localRay = new Ray()
+const localHit = new Vector3()
+
+function boxRaycast(box: Box3) {
+  return function raycast(this: Object3D, raycaster: Raycaster, intersects: Intersection[]) {
+    rayInverse.copy(this.matrixWorld).invert()
+    localRay.copy(raycaster.ray).applyMatrix4(rayInverse)
+    if (!localRay.intersectBox(box, localHit)) return
+
+    const point = localHit.clone().applyMatrix4(this.matrixWorld)
+    const distance = raycaster.ray.origin.distanceTo(point)
+    if (distance < raycaster.near || distance > raycaster.far) return
+
+    intersects.push({ distance, point, object: this })
+  }
+}
+
+function colliderBox(plot: Plot): Box3 {
+  const height = PAD_TOP + plot.floors * BUILDING.floorHeight + BUILDING.roofHeight
+  return new Box3(
+    new Vector3(-plot.footprint.w / 2, 0, -plot.footprint.d / 2),
+    new Vector3(plot.footprint.w / 2, height, plot.footprint.d / 2),
+  )
+}
+
+function BuildingGroup({
+  plot,
+  onRegister,
+}: {
+  plot: Plot
+  onRegister: (id: string, group: Object3D | null) => void
+}) {
   const parts = getBuilding(plot)
+  const raycast = useMemo(() => boxRaycast(colliderBox(plot)), [plot])
+
+  const setHovered = useEstate((state) => state.setHovered)
+  const selectPlot = useEstate((state) => state.selectPlot)
+  // The lift is only a few percent of a building's height, so at overview
+  // distance the brightened pad is what actually reads as the hover cue.
+  const isHighlighted = useEstate(
+    (state) => state.selectedPlotId === plot.id || state.hoveredPlotId === plot.id,
+  )
+
+  const releaseTimer = useRef<number | null>(null)
+
+  const cancelRelease = () => {
+    if (releaseTimer.current !== null) {
+      window.clearTimeout(releaseTimer.current)
+      releaseTimer.current = null
+    }
+  }
+
+  useEffect(() => cancelRelease, [])
 
   return (
-    <group position={plot.position} rotation={[0, plot.rotation, 0]}>
-      <mesh geometry={parts.pad} material={padMaterial} receiveShadow castShadow={false} />
-      <mesh geometry={parts.shell} material={shellMaterial} castShadow receiveShadow />
+    <group
+      ref={(group) => onRegister(plot.id, group)}
+      position={plot.position}
+      rotation={[0, plot.rotation, 0]}
+    >
+      <mesh
+        geometry={parts.pad}
+        material={isHighlighted ? padHighlightMaterial : padMaterial}
+        receiveShadow
+        castShadow={false}
+        raycast={() => null}
+      />
+      <mesh
+        geometry={parts.shell}
+        material={shellMaterial}
+        castShadow
+        receiveShadow
+        raycast={raycast}
+        onPointerOver={(event) => {
+          event.stopPropagation()
+          cancelRelease()
+          setHovered(plot.id)
+        }}
+        onPointerOut={() => {
+          cancelRelease()
+          releaseTimer.current = window.setTimeout(() => {
+            releaseTimer.current = null
+            // Only clears if this building is still the hovered one, so moving
+            // straight onto a neighbour never blanks the new hover.
+            if (useEstate.getState().hoveredPlotId === plot.id) setHovered(null)
+          }, UI.hoverReleaseMs)
+        }}
+        onClick={(event) => {
+          // r3f tracks pointer travel since the press but still fires the click
+          // regardless; anything past the threshold was an orbit drag.
+          if (event.delta > UI.dragThresholdPx) return
+          event.stopPropagation()
+          selectPlot(plot.id)
+        }}
+      />
     </group>
   )
 }
 
-function Windows({ matrices }: { matrices: Matrix4[] }) {
+const Windows = forwardRef<InstancedMesh, { matrices: Matrix4[] }>(function Windows(
+  { matrices },
+  ref,
+) {
   const meshRef = useRef<InstancedMesh>(null)
+  useImperativeHandle(ref, () => meshRef.current!, [])
   const geometry = getWindowGeometry()
 
   useLayoutEffect(() => {
@@ -389,9 +501,10 @@ function Windows({ matrices }: { matrices: Matrix4[] }) {
       args={[geometry, windowMaterials, matrices.length]}
       castShadow={false}
       receiveShadow={false}
+      raycast={() => null}
     />
   )
-}
+})
 
 export const buildingPlots = plots.filter((plot) => plot.kind !== 'contact')
 
@@ -499,32 +612,86 @@ function Nameplates() {
   )
 }
 
+const liftedMatrix = new Matrix4()
+
 export function Buildings() {
   // Window transforms are baked into world space once, since the instanced mesh
-  // lives outside each building's group.
-  const windowMatrices = useMemo(() => {
+  // lives outside each building's group. The ranges let a lifted building take
+  // its own windows with it without touching anyone else's.
+  const { matrices, ranges } = useMemo(() => {
     const all: Matrix4[] = []
+    const byPlot = new Map<string, [number, number]>()
     const buildingMatrix = new Matrix4()
     const quaternion = new Quaternion()
     const scale = new Vector3(1, 1, 1)
 
     for (const plot of buildingPlots) {
+      const start = all.length
       quaternion.setFromEuler(new Euler(0, plot.rotation, 0))
       buildingMatrix.compose(new Vector3(...plot.position), quaternion, scale)
       for (const local of getBuilding(plot).windows) {
         all.push(new Matrix4().multiplyMatrices(buildingMatrix, local))
       }
+      byPlot.set(plot.id, [start, all.length - start])
     }
 
-    return all
+    return { matrices: all, ranges: byPlot }
   }, [])
+
+  const windowsRef = useRef<InstancedMesh>(null)
+  const groups = useRef(new Map<string, Object3D>())
+  const lifts = useRef(new Map<string, number>())
+
+  const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
+  const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const coarsePointer = useCoarsePointer()
+
+  const register = useCallback((id: string, group: Object3D | null) => {
+    if (group) groups.current.set(id, group)
+    else groups.current.delete(id)
+  }, [])
+
+  useFrame((_, delta) => {
+    const windows = windowsRef.current
+    const smoothing = 1 - Math.pow(UI.hoverLiftDecay, Math.min(delta, CAMERA.maxFrameDelta))
+    let windowsMoved = false
+
+    for (const plot of buildingPlots) {
+      // Touch has no hover, so a tap goes straight to selected; the selected
+      // building then stays raised so it is clear which one is open.
+      const raised =
+        plot.id === selectedPlotId || (!coarsePointer && plot.id === hoveredPlotId)
+      const target = raised ? UI.hoverLiftDistance : 0
+      const current = lifts.current.get(plot.id) ?? 0
+      if (Math.abs(target - current) < 0.0002) continue
+
+      const next = current + (target - current) * smoothing
+      lifts.current.set(plot.id, next)
+
+      const group = groups.current.get(plot.id)
+      if (group) group.position.y = next
+
+      const range = ranges.get(plot.id)
+      if (windows && range) {
+        const [start, count] = range
+        for (let index = start; index < start + count; index += 1) {
+          liftedMatrix.copy(matrices[index])
+          liftedMatrix.elements[13] += next
+          windows.setMatrixAt(index, liftedMatrix)
+        }
+        windowsMoved = true
+      }
+    }
+
+    if (windowsMoved && windows) windows.instanceMatrix.needsUpdate = true
+  })
 
   return (
     <group>
       {buildingPlots.map((plot) => (
-        <BuildingGroup key={plot.id} plot={plot} />
+        <BuildingGroup key={plot.id} plot={plot} onRegister={register} />
       ))}
-      <Windows matrices={windowMatrices} />
+      <Windows ref={windowsRef} matrices={matrices} />
       <Nameplates />
     </group>
   )

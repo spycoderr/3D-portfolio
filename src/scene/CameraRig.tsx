@@ -55,9 +55,13 @@ function overviewPose(): Pose {
 function plotPose(plot: Plot, mode: CameraMode, isMobile: boolean): Pose {
   const base = new Vector3(...plot.position)
   const interior = mode === 'interior'
-  const footprint = Math.max(plot.footprint.w, plot.footprint.d)
 
-  let distance = footprint * FOCUS.distanceScale + plot.floors * FOCUS.floorBonus
+  // Framing follows the building's largest dimension, height included. Using
+  // the footprint alone pulled the camera far too close to tall plots.
+  const height = plot.floors * BUILDING.floorHeight + BUILDING.roofHeight
+  const size = Math.max(plot.footprint.w, plot.footprint.d, height)
+
+  let distance = size * FOCUS.distanceScale
   if (interior) distance *= FOCUS.interiorDistanceFactor
   const elevation = interior ? FOCUS.interiorElevation : FOCUS.elevation
 
