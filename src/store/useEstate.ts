@@ -1,0 +1,34 @@
+import { create } from 'zustand'
+
+export type CameraMode = 'overview' | 'focused' | 'interior'
+
+type EstateState = {
+  mode: CameraMode
+  selectedPlotId: string | null
+  // Until the visitor deliberately engages, the canvas stays out of the way:
+  // the wheel scrolls the page and a touch swipe scrolls it too.
+  hasEngaged: boolean
+  engage: () => void
+  selectPlot: (id: string) => void
+  clearSelection: () => void
+  enterInterior: () => void
+  exitInterior: () => void
+}
+
+export const useEstate = create<EstateState>()((set) => ({
+  mode: 'overview',
+  selectedPlotId: null,
+  hasEngaged: false,
+
+  engage: () => set({ hasEngaged: true }),
+
+  selectPlot: (id) => set({ mode: 'focused', selectedPlotId: id, hasEngaged: true }),
+
+  clearSelection: () => set({ mode: 'overview', selectedPlotId: null }),
+
+  enterInterior: () =>
+    set((state) => (state.selectedPlotId ? { mode: 'interior' } : state)),
+
+  exitInterior: () =>
+    set((state) => (state.mode === 'interior' ? { mode: 'focused' } : state)),
+}))

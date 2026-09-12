@@ -50,7 +50,29 @@ export const CAMERA = {
   zoomSpeed: 0.7,
   dampingFactor: 0.06,
   idleDriftSpeed: 0.015,
+  idleDelay: 4,
   transitionDuration: 1.1,
+  // A backgrounded tab resumes with one enormous delta; clamping it stops the
+  // drift from lurching on the first frame back.
+  maxFrameDelta: 0.05,
+} as const
+
+// How the camera frames a selected plot. Every value is derived from the plot's
+// own geometry, so no building ever needs a hand-placed camera.
+export const FOCUS = {
+  distanceScale: 2.6,
+  floorBonus: 1.2,
+  elevation: 0.62,
+  // Swings off the radial axis so two faces of the building are visible.
+  azimuthOffset: 0.6,
+  targetHeightFactor: 0.55,
+  // Pushes the look-at point right so the building sits clear of the panel.
+  panelShiftFactor: 0.26,
+  minDistanceFactor: 0.6,
+  maxDistanceFactor: 1.8,
+  interiorDistanceFactor: 0.42,
+  interiorElevation: 0.3,
+  interiorAzimuthArc: 0.5,
 } as const
 
 // Lighting
@@ -118,6 +140,7 @@ export const UI = {
 
 // Building defaults
 export const BUILDING = {
+  floorHeight: 2.6,
   defaultWallColor: COLORS.sand,
   defaultTrimColor: COLORS.ink,
   windowFrameThickness: 0.08,
