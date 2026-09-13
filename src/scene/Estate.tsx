@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { HoverLabel } from '@/components/ui/HoverLabel'
+import { PlotPanel } from '@/components/ui/PlotPanel'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useEstate } from '@/store/useEstate'
@@ -128,6 +129,7 @@ export function Estate() {
 
       {ready && !hasEngaged && <EngagementHint />}
       {ready && <HoverLabel container={container} />}
+      {ready && <PlotPanel />}
     </div>
   )
 }

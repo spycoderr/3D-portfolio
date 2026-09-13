@@ -219,6 +219,9 @@ export const UI = {
   // Holding the hover briefly stops it flickering when the pointer crosses a
   // seam or passes between two buildings.
   hoverReleaseMs: 60,
+  // The detail panel slides in from the right on desktop, up from the bottom
+  // on mobile. Short enough to feel attached to the camera flight it follows.
+  panelTransitionMs: 260,
 } as const
 
 // Opening a building: the roof leads, the near walls follow, and the whole

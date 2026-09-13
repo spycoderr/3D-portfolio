@@ -1,8 +1,9 @@
 import { profile } from '@/data/profile'
+import { PlotIndex } from '@/components/ui/PlotIndex'
 
 export function IntroColumn() {
   return (
-    <div className="flex h-full flex-col justify-center px-6 py-16 sm:px-10 lg:px-16">
+    <div className="flex h-full flex-col justify-center overflow-y-auto px-6 py-16 sm:px-10 lg:px-16">
       <h1 className="max-w-[14ch] font-display text-step-5 leading-[0.95] tracking-tight text-ink lg:text-step-6">
         {profile.name}
       </h1>
@@ -52,6 +53,8 @@ export function IntroColumn() {
           </div>
         ))}
       </div>
+
+      <PlotIndex />
     </div>
   )
 }
