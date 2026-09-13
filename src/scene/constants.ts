@@ -1,16 +1,38 @@
+import { palette } from '@/theme'
+
 // Scene geometry. The estate reads from the middle out: park, ring road, then
 // the plots facing inward from beyond it.
 export const SCENE = {
   // Control radii for the ring road loop. Varying them gives the curvature the
   // cars bank into; the list is fixed so the layout is identical every load.
   roadControlRadii: [11.9, 11.4, 10.9, 10.8, 11.1, 11.7, 11.8, 11.2],
-  groundRadius: 20,
-  groundSegments: 96,
-  // Plinth reads as the table the model sits on. Its top sits below the grass
-  // disc and its radius is wider, so the lip is visible and nothing is coplanar.
-  plinthRadius: 20.6,
-  plinthTopY: -0.05,
-  plinthHeight: 0.8,
+} as const
+
+// The floating slab. Its thick exposed edge is what makes the estate read as a
+// model on a table rather than a world with a horizon, so the edge is the one
+// dimension worth being generous with.
+export const SLAB = {
+  width: 38,
+  depth: 38,
+  cornerRadius: 6,
+  thickness: 1.05,
+  // A slight chamfer catches the light where grass meets soil, so the two
+  // materials never meet in a hard black line.
+  bevel: 0.09,
+  bevelSegments: 2,
+  // Resolution of the rounded corners.
+  curveSegments: 14,
+  // Everything on the model is laid out relative to a top surface at y = 0, so
+  // the road and prop heights never need to know the slab is there at all.
+  topY: 0,
+  // Usable ground stops short of the lip, so nothing hangs over the edge.
+  margin: 1.6,
+  // The slab floats, so its shadow lands on nothing: one large blurred plane
+  // below it does the whole job of grounding the model in the void.
+  shadowDrop: 1.5,
+  shadowScale: 1.16,
+  shadowOpacity: 0.17,
+  shadowTextureSize: 256,
 } as const
 
 // Road. Every surface gets its own y so no two are ever coplanar.
@@ -69,11 +91,11 @@ export const CAMERA = {
   far: 150,
   // Distance is set by the narrowest viewport the canvas gets: the desktop
   // right column is taller than wide, so horizontal FOV frames the plinth.
-  homePosition: [17.8, 27.5, 44.1] as [number, number, number],
+  homePosition: [20.4, 31.5, 50.6] as [number, number, number],
   homeTarget: [0, 0, 0] as [number, number, number],
-  defaultDistance: 55,
-  minDistance: 24,
-  maxDistance: 72,
+  defaultDistance: 63,
+  minDistance: 28,
+  maxDistance: 88,
   minPolarAngle: 0.5,
   maxPolarAngle: 1.35,
   rotateSpeed: 0.55,
@@ -137,59 +159,117 @@ export const PARK = {
 } as const
 
 export const ESTATE = {
-  treeCount: 56,
+  treeCount: 84,
   treeSeed: 20280512,
   treeClearanceFromRoad: 2.4,
   treeClearanceFromPlot: 3.4,
   treeClearanceFromPond: 1.2,
   treeMinSpacing: 1.5,
+  // Trees have to reach the lip now that the ground is a slab, or the rounded
+  // corners read as bald patches.
+  treeSlabMargin: 2.5,
   lampCount: 14,
   lampHeight: 1.5,
-  hedgeRadius: 18.9,
-  hedgeTube: 0.34,
-  hedgeSquash: 0.55,
-  gateU: 0.52,
-  gatePillarHeight: 1.9,
-  gateArchHeight: 0.26,
   noticeBoardWidth: 1.5,
   noticeBoardHeight: 0.95,
   noticeBoardPostHeight: 0.75,
 } as const
 
-// Colors (hex)
+// The wall and hedge that run the slab's perimeter, and the one gap in them
+// where the society is entered.
+export const BOUNDARY = {
+  inset: 1.5,
+  wallHeight: 0.42,
+  wallThickness: 0.26,
+  hedgeHeight: 0.55,
+  hedgeThickness: 0.44,
+  // Sampling resolution around the outline. High enough that the rounded
+  // corners read as curves rather than facets.
+  divisions: 168,
+  // Fraction of the outline left open for the gate, centred on gateAt.
+  gateAt: 0.375,
+  gateSpan: 0.035,
+  gatePillarHeight: 1.55,
+  gatePillarSize: 0.5,
+  gateArchHeight: 0.24,
+} as const
+
+// Plot names marked into the grass beside each building. Kept close to the
+// grass tone so they read as terrain marking rather than a label floating in
+// the scene, and lifted only when that plot is being looked at.
+export const GROUND_LABEL = {
+  width: 2.5,
+  height: 0.62,
+  // Clear of the grass without ever reaching the kerb it sits next to.
+  y: 0.02,
+  offsetX: 1.15,
+  offsetZ: 0.45,
+  restOpacity: 0.26,
+  activeOpacity: 0.95,
+  // Per-second decay for the fade, frame-rate independent via 1 - decay^dt.
+  fadeDecay: 0.0001,
+  cellWidth: 512,
+  cellHeight: 128,
+  fontSize: 74,
+} as const
+
+// Painted crossings where each plot's spur meets the ring road.
+export const CROSSING = {
+  stripeCount: 5,
+  stripeWidth: 0.2,
+  stripeGap: 0.19,
+  y: 0.085,
+} as const
+
+// The community block on the central green: the one building that belongs to
+// the society rather than to a project.
+export const COMMUNITY = {
+  position: [4.3, 0, -3.4] as [number, number, number],
+  rotation: -0.5,
+  width: 3.1,
+  depth: 1.9,
+  height: 1.15,
+  roofOverhang: 0.16,
+  roofHeight: 0.2,
+} as const
+
+// Colours all come from the theme; this is the scene's view of it under the
+// names the geometry already speaks. The theme file is the only place a colour
+// is ever chosen.
 export const COLORS = {
-  sky: "#cfe0ea",
-  grass: "#8fb56a",
-  grassDark: "#6f9a55",
-  road: "#5f6771",
-  kerb: "#cfc9b8",
-  sand: "#e6ddca",
-  brick: "#c2603f",
-  slate: "#37506b",
-  moss: "#4e7a4a",
-  ink: "#1d2430",
-  paper: "#f3efe6",
-  windowDark: "#2a3a4a",
-  windowLight: "#e8f0f8",
-  plinth: "#bdb7a6",
-  pad: "#9cc077",
-  padHighlight: "#b6d68f",
-  water: "#6f9fb5",
-  path: "#d8d0bd",
-  trunk: "#7a5b42",
-  foliage: "#5c8a4a",
-  foliageDark: "#4a7440",
-  hedge: "#587f45",
-  wood: "#a88153",
-  woodDark: "#6f5233",
-  fabric: "#5b6b7c",
-  rug: "#b26a5e",
-  pot: "#b5765a",
-  leaf: "#4e8a52",
-  screenFrame: "#2a3038",
-  screenBg: "#12181f",
-  shelfBlock: "#c9b48c",
-  brass: "#c8a44e",
+  sky: palette.groundFar,
+  grass: palette.slabTop,
+  grassDark: palette.grassDark,
+  road: palette.road,
+  kerb: palette.kerb,
+  sand: palette.sand,
+  brick: palette.clay,
+  slate: palette.indigo,
+  moss: palette.sage,
+  ink: palette.ink,
+  paper: palette.paper,
+  windowDark: palette.windowDark,
+  windowLight: palette.windowLit,
+  slabEdge: palette.slabEdge,
+  roadMark: palette.roadMark,
+  pad: palette.pad,
+  padHighlight: palette.padHighlight,
+  water: palette.water,
+  path: palette.path,
+  trunk: palette.trunk,
+  foliage: palette.foliage,
+  foliageDark: palette.foliageDark,
+  hedge: palette.hedge,
+  wood: palette.wood,
+  woodDark: palette.woodDark,
+  fabric: palette.fabric,
+  rug: palette.rug,
+  pot: palette.pot,
+  leaf: palette.leaf,
+  screenFrame: palette.screenFrame,
+  screenBg: palette.screenBg,
+  shelfBlock: palette.shelfBlock,
+  brass: palette.brass,
 } as const
 
 // Typography (px)

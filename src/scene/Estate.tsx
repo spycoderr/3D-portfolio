@@ -12,6 +12,7 @@ import { CAMERA, COLORS, PERF, UI } from './constants'
 import { pixelRatioFor } from './deviceTier'
 import { Buildings } from './Building'
 import { Ground } from './Ground'
+import { GroundLabels } from './GroundLabels'
 import { Interiors } from './Interior'
 import { Lighting } from './Lighting'
 import { Props } from './Props'
@@ -129,6 +130,7 @@ export function Estate() {
             <Road />
             <Props />
             <Buildings />
+            <GroundLabels />
             <Interiors />
             <Traffic />
             <CameraRig />

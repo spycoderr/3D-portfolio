@@ -1,8 +1,10 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import {
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   CircleGeometry,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   InstancedMesh,
@@ -15,23 +17,39 @@ import {
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { plots } from '@/data/plots'
-import { CAMERA, COLORS, ESTATE, PARK, ROAD } from './constants'
-import { getLanePoint, getNormalAt, getPointAt, getTangentAt } from './curves'
+import { palette } from '@/theme'
+import { BOUNDARY, COLORS, COMMUNITY, ESTATE, PARK, ROAD, SLAB } from './constants'
+import { getLanePoint, getPointAt } from './curves'
+import { gateAnchor, isOnSlab, slabOutline } from './slab'
+
+// One material for every piece of static dressing. Colour rides on the vertices
+// instead, so nine separate props collapse into a single draw call.
+const dressingMaterial = new MeshLambertMaterial({ vertexColors: true })
 
 const materials = {
   trunk: new MeshLambertMaterial({ color: COLORS.trunk }),
   foliage: new MeshLambertMaterial({ color: COLORS.foliage }),
-  hedge: new MeshLambertMaterial({ color: COLORS.hedge }),
-  water: new MeshLambertMaterial({ color: COLORS.water }),
-  path: new MeshLambertMaterial({ color: COLORS.path }),
-  stone: new MeshLambertMaterial({ color: COLORS.kerb }),
   ink: new MeshLambertMaterial({ color: COLORS.ink }),
-  paper: new MeshLambertMaterial({ color: COLORS.paper }),
 }
 
 function box(w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
   const geometry = new BoxGeometry(w, h, d)
   geometry.translate(x, y, z)
+  return geometry
+}
+
+// Bakes a flat colour into a geometry so it can be merged with differently
+// coloured neighbours and still be drawn by one shared material.
+function tint(geometry: BufferGeometry, colour: string): BufferGeometry {
+  const value = new Color(colour)
+  const count = geometry.attributes.position.count
+  const colours = new Float32Array(count * 3)
+  for (let index = 0; index < count; index += 1) {
+    colours[index * 3] = value.r
+    colours[index * 3 + 1] = value.g
+    colours[index * 3 + 2] = value.b
+  }
+  geometry.setAttribute('color', new BufferAttribute(colours, 3))
   return geometry
 }
 
@@ -48,34 +66,34 @@ function mulberry32(seed: number) {
 
 type TreePlacement = { x: number; z: number; scale: number; rotation: number }
 
+// Sampled across the whole slab rather than in an annulus, because the rounded
+// corners of the slab are exactly where an annulus leaves bald patches.
 function placeTrees(): TreePlacement[] {
   const random = mulberry32(ESTATE.treeSeed)
   const placements: TreePlacement[] = []
 
-  // Sampled once so each candidate can be rejected against the road cheaply.
   const roadSamples: Vector2[] = []
   const point = new Vector3()
-  for (let index = 0; index < 220; index += 1) {
-    getPointAt(index / 220, point)
+  for (let index = 0; index < 260; index += 1) {
+    getPointAt(index / 260, point)
     roadSamples.push(new Vector2(point.x, point.z))
   }
 
   const plotPoints = plots.map((plot) => new Vector2(plot.position[0], plot.position[2]))
   const pond = new Vector2(PARK.pondCentre[0], PARK.pondCentre[1])
+  const community = new Vector2(COMMUNITY.position[0], COMMUNITY.position[2])
   const candidate = new Vector2()
   const roadClearance = ROAD.width / 2 + ROAD.kerbWidth + ESTATE.treeClearanceFromRoad
 
   let attempts = 0
-  while (placements.length < ESTATE.treeCount && attempts < 6000) {
+  while (placements.length < ESTATE.treeCount && attempts < 20000) {
     attempts += 1
 
-    const angle = random() * Math.PI * 2
-    // Trees live either in the park or in the band outside the ring.
-    const inPark = random() < 0.3
-    const radius = inPark ? 3 + random() * 5.5 : 12.9 + random() * 5.4
-    candidate.set(Math.sin(angle) * radius, Math.cos(angle) * radius)
+    candidate.set((random() - 0.5) * SLAB.width, (random() - 0.5) * SLAB.depth)
 
+    if (!isOnSlab(candidate.x, candidate.y, ESTATE.treeSlabMargin)) continue
     if (candidate.distanceTo(pond) < PARK.pondRadius + ESTATE.treeClearanceFromPond) continue
+    if (candidate.distanceTo(community) < COMMUNITY.width) continue
     if (roadSamples.some((sample) => sample.distanceTo(candidate) < roadClearance)) continue
     if (plotPoints.some((plot) => plot.distanceTo(candidate) < ESTATE.treeClearanceFromPlot)) continue
     if (
@@ -85,12 +103,10 @@ function placeTrees(): TreePlacement[] {
     ) {
       continue
     }
-    if (inPark) {
-      const fromPathCentre = candidate.length()
-      if (fromPathCentre > PARK.pathInnerRadius - 0.6 && fromPathCentre < PARK.pathOuterRadius + 0.6) {
-        continue
-      }
-    }
+
+    // Keep the ring of grass around the pond path clear so the walk reads.
+    const fromCentre = candidate.length()
+    if (fromCentre > PARK.pathInnerRadius - 0.6 && fromCentre < PARK.pathOuterRadius + 0.6) continue
 
     placements.push({
       x: candidate.x,
@@ -103,51 +119,113 @@ function placeTrees(): TreePlacement[] {
   return placements
 }
 
+// Wrapped distance around the outline, used to leave a gap for the gate.
+function outlineDistance(t: number, from: number): number {
+  const delta = Math.abs(t - from)
+  return Math.min(delta, 1 - delta)
+}
+
+// The wall and hedge are swept as segments along the slab's own outline, so
+// they follow its rounded corners instead of approximating them with a circle.
+function sweepBoundary(inset: number, width: number, height: number, colour: string) {
+  const points = slabOutline(inset, BOUNDARY.divisions)
+  const parts: BufferGeometry[] = []
+
+  for (let index = 0; index < BOUNDARY.divisions; index += 1) {
+    const t = (index + 0.5) / BOUNDARY.divisions
+    if (outlineDistance(t, BOUNDARY.gateAt) < BOUNDARY.gateSpan / 2) continue
+
+    const a = points[index]
+    const b = points[index + 1]
+    const dx = b.x - a.x
+    const dz = b.y - a.y
+    const length = Math.hypot(dx, dz)
+    if (length < 1e-5) continue
+
+    // Overlapped slightly so the outside of each corner never opens a seam.
+    const segment = box(width, height, length * 1.4, 0, height / 2, 0)
+    segment.rotateY(Math.atan2(dx, dz))
+    segment.translate((a.x + b.x) / 2, 0, (a.y + b.y) / 2)
+    parts.push(segment)
+  }
+
+  const merged = mergeGeometries(parts, false)
+  parts.forEach((part) => part.dispose())
+  return tint(merged, colour)
+}
+
+function buildGate(): BufferGeometry[] {
+  const gate = gateAnchor()
+
+  // Along the wall line, so the pillars land on the two cut ends of the gap.
+  const alongX = Math.sin(gate.angle)
+  const alongZ = Math.cos(gate.angle)
+  // Half the gap, plus half a pillar, so each pillar closes one cut end of it.
+  const reach = gate.gap / 2 + BOUNDARY.gatePillarSize / 2
+
+  const parts: BufferGeometry[] = []
+
+  for (const side of [1, -1]) {
+    const pillar = box(
+      BOUNDARY.gatePillarSize,
+      BOUNDARY.gatePillarHeight,
+      BOUNDARY.gatePillarSize,
+      0,
+      BOUNDARY.gatePillarHeight / 2,
+      0,
+    )
+    pillar.rotateY(gate.angle)
+    pillar.translate(gate.x + alongX * reach * side, 0, gate.z + alongZ * reach * side)
+    parts.push(tint(pillar, palette.kerb))
+  }
+
+  const arch = box(
+    BOUNDARY.gatePillarSize * 0.6,
+    BOUNDARY.gateArchHeight,
+    reach * 2,
+    0,
+    BOUNDARY.gatePillarHeight + BOUNDARY.gateArchHeight / 2,
+    0,
+  )
+  arch.rotateY(gate.angle)
+  arch.translate(gate.x, 0, gate.z)
+  parts.push(tint(arch, palette.clay))
+
+  return parts
+}
+
+function buildCommunityBlock(): BufferGeometry[] {
+  const walls = box(COMMUNITY.width, COMMUNITY.height, COMMUNITY.depth, 0, COMMUNITY.height / 2, 0)
+  const roof = box(
+    COMMUNITY.width + COMMUNITY.roofOverhang * 2,
+    COMMUNITY.roofHeight,
+    COMMUNITY.depth + COMMUNITY.roofOverhang * 2,
+    0,
+    COMMUNITY.height + COMMUNITY.roofHeight / 2,
+    0,
+  )
+
+  return [tint(walls, palette.sand), tint(roof, palette.sage)].map((part) => {
+    part.rotateY(COMMUNITY.rotation)
+    part.translate(COMMUNITY.position[0], 0, COMMUNITY.position[2])
+    return part
+  })
+}
+
 type EstateResources = {
   trunk: BufferGeometry
   foliage: BufferGeometry
   lamp: BufferGeometry
   bench: BufferGeometry
-  pond: BufferGeometry
-  pondRim: BufferGeometry
-  path: BufferGeometry
-  hedge: BufferGeometry
-  gate: BufferGeometry
-  noticeBoard: BufferGeometry
-  noticePanel: BufferGeometry
+  // Flat on the ground: receives shadow, casts none, so it never shadow-acnes
+  // against the surface it is lying on.
+  flat: BufferGeometry
+  // Everything with height, merged into one shadow-casting mesh.
+  standing: BufferGeometry
   trees: TreePlacement[]
 }
 
 let resources: EstateResources | null = null
-
-function buildGate(): BufferGeometry {
-  const parts: BufferGeometry[] = []
-  const centre = getPointAt(ESTATE.gateU, new Vector3())
-  const normal = getNormalAt(ESTATE.gateU, new Vector3())
-  const tangent = getTangentAt(ESTATE.gateU, new Vector3())
-  const angle = Math.atan2(tangent.x, tangent.z)
-  const reach = ROAD.width / 2 + ROAD.kerbWidth + 0.3
-
-  for (const side of [1, -1]) {
-    const pillar = box(0.42, ESTATE.gatePillarHeight, 0.42)
-    pillar.rotateY(angle)
-    pillar.translate(
-      centre.x + normal.x * reach * side,
-      ESTATE.gatePillarHeight / 2,
-      centre.z + normal.z * reach * side,
-    )
-    parts.push(pillar)
-  }
-
-  const arch = box(0.3, ESTATE.gateArchHeight, reach * 2)
-  arch.rotateY(angle)
-  arch.translate(centre.x, ESTATE.gatePillarHeight + ESTATE.gateArchHeight / 2, centre.z)
-  parts.push(arch)
-
-  const merged = mergeGeometries(parts, false)
-  parts.forEach((part) => part.dispose())
-  return merged
-}
 
 function getResources(): EstateResources {
   if (resources) return resources
@@ -192,17 +270,7 @@ function getResources(): EstateResources {
   path.rotateX(-Math.PI / 2)
   path.translate(0, PARK.pathY, 0)
 
-  const hedge = new TorusGeometry(ESTATE.hedgeRadius, ESTATE.hedgeTube, 6, 72)
-  hedge.rotateX(-Math.PI / 2)
-  hedge.scale(1, ESTATE.hedgeSquash, 1)
-  hedge.translate(0, ESTATE.hedgeTube * ESTATE.hedgeSquash, 0)
-
   const contact = plots.find((plot) => plot.kind === 'contact')!
-  // Angled to face the camera's resting position, so the board reads on arrival.
-  const facing = Math.atan2(
-    CAMERA.homePosition[0] - contact.position[0],
-    CAMERA.homePosition[2] - contact.position[2],
-  )
   const boardY = ESTATE.noticeBoardPostHeight + ESTATE.noticeBoardHeight / 2
   const noticeParts = [
     box(0.1, ESTATE.noticeBoardPostHeight, 0.1, -ESTATE.noticeBoardWidth / 2 + 0.15, ESTATE.noticeBoardPostHeight / 2, 0),
@@ -211,11 +279,11 @@ function getResources(): EstateResources {
   ]
   const noticeBoard = mergeGeometries(noticeParts, false)
   noticeParts.forEach((part) => part.dispose())
-  noticeBoard.rotateY(facing)
+  noticeBoard.rotateY(contact.rotation)
   noticeBoard.translate(contact.position[0], 0, contact.position[2])
 
   const noticePanel = box(ESTATE.noticeBoardWidth, ESTATE.noticeBoardHeight, 0.03, 0, boardY, 0.06)
-  noticePanel.rotateY(facing)
+  noticePanel.rotateY(contact.rotation)
   noticePanel.translate(contact.position[0], 0, contact.position[2])
 
   resources = {
@@ -223,13 +291,26 @@ function getResources(): EstateResources {
     foliage,
     lamp,
     bench,
-    pond,
-    pondRim,
-    path,
-    hedge,
-    gate: buildGate(),
-    noticeBoard,
-    noticePanel,
+    flat: mergeGeometries(
+      [tint(pond, palette.water), tint(pondRim, palette.kerb), tint(path, palette.path)],
+      false,
+    ),
+    standing: mergeGeometries(
+      [
+        sweepBoundary(BOUNDARY.inset, BOUNDARY.wallThickness, BOUNDARY.wallHeight, palette.kerb),
+        sweepBoundary(
+          BOUNDARY.inset + (BOUNDARY.wallThickness + BOUNDARY.hedgeThickness) / 2,
+          BOUNDARY.hedgeThickness,
+          BOUNDARY.hedgeHeight,
+          palette.hedge,
+        ),
+        ...buildGate(),
+        ...buildCommunityBlock(),
+        tint(noticeBoard, palette.ink),
+        tint(noticePanel, palette.paper),
+      ],
+      false,
+    ),
     trees: placeTrees(),
   }
 
@@ -265,13 +346,8 @@ export function Props() {
 
   return (
     <group>
-      <mesh geometry={parts.pond} material={materials.water} receiveShadow castShadow={false} />
-      <mesh geometry={parts.pondRim} material={materials.stone} receiveShadow castShadow={false} />
-      <mesh geometry={parts.path} material={materials.path} receiveShadow castShadow={false} />
-      <mesh geometry={parts.hedge} material={materials.hedge} castShadow receiveShadow />
-      <mesh geometry={parts.gate} material={materials.stone} castShadow receiveShadow />
-      <mesh geometry={parts.noticeBoard} material={materials.ink} castShadow receiveShadow />
-      <mesh geometry={parts.noticePanel} material={materials.paper} castShadow={false} receiveShadow />
+      <mesh geometry={parts.flat} material={dressingMaterial} receiveShadow castShadow={false} />
+      <mesh geometry={parts.standing} material={dressingMaterial} castShadow receiveShadow />
 
       <TreeInstances trees={parts.trees} trunk={parts.trunk} foliage={parts.foliage} />
       <CountedInstances
