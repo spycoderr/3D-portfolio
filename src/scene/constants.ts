@@ -224,6 +224,18 @@ export const UI = {
   panelTransitionMs: 260,
 } as const
 
+// The budget the scene is held to, and the levers for meeting it on hardware
+// slower than the machine it was built on.
+export const PERF = {
+  // Retina is worth it where there is headroom for it. On a weaker GPU the
+  // extra 78% of pixels buys nothing a visitor would ever notice.
+  maxPixelRatio: 2,
+  maxPixelRatioLowTier: 1.5,
+  // At or below these a device is treated as low tier. Read once, at boot.
+  lowTierCores: 4,
+  lowTierMemoryGb: 4,
+} as const
+
 // Opening a building: the roof leads, the near walls follow, and the whole
 // sequence is one orchestrated move rather than two independent tweens.
 export const REVEAL = {

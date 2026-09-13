@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import {
   BoxGeometry,
   BufferGeometry,
@@ -103,26 +103,10 @@ function createVehicles(): Vehicle[] {
 export function Traffic() {
   const bodyRef = useRef<InstancedMesh>(null)
   const axleRef = useRef<InstancedMesh>(null)
-  const gl = useThree((state) => state.gl)
   const prefersReducedMotion = usePrefersReducedMotion()
 
   const vehicles = useRef<Vehicle[]>(createVehicles())
-  const inView = useRef(true)
   const { body, axle, bodyMaterial, wheelMaterial } = getResources()
-
-  // Nothing moves while the estate is scrolled off screen, which is free
-  // performance on a page where the canvas is only part of the hero.
-  useEffect(() => {
-    const element = gl.domElement
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        inView.current = entry.isIntersecting
-      },
-      { threshold: 0 },
-    )
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [gl])
 
   useEffect(() => {
     const mesh = bodyRef.current
@@ -140,7 +124,7 @@ export function Traffic() {
     if (!bodyMesh || !axleMesh) return
 
     const step = Math.min(delta, 0.05)
-    const moving = !prefersReducedMotion && inView.current
+    const moving = !prefersReducedMotion
     const elapsed = state.clock.elapsedTime
 
     vehicles.current.forEach((vehicle, index) => {

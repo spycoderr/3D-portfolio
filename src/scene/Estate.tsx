@@ -1,12 +1,15 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { HoverLabel } from '@/components/ui/HoverLabel'
 import { PlotPanel } from '@/components/ui/PlotPanel'
+import { PerfHud, type PerfSample } from './PerfHud'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
+import { useRenderGate } from '@/hooks/useRenderGate'
 import { useEstate } from '@/store/useEstate'
 import { CameraRig } from './CameraRig'
-import { CAMERA, COLORS, UI } from './constants'
+import { CAMERA, COLORS, PERF, UI } from './constants'
+import { pixelRatioFor } from './deviceTier'
 import { Buildings } from './Building'
 import { Ground } from './Ground'
 import { Interiors } from './Interior'
@@ -18,11 +21,17 @@ import { Traffic } from './Traffic'
 // Holds the reveal back until a few frames have actually rendered, so shaders
 // are compiled and the first frame the visitor sees is never a stutter.
 function WarmUp({ onReady }: { onReady: () => void }) {
+  const gl = useThree((state) => state.gl)
+  const scene = useThree((state) => state.scene)
+  const camera = useThree((state) => state.camera)
   const frames = useRef(0)
   const fired = useRef(false)
 
   useFrame(() => {
     if (fired.current) return
+    // Compiling up front means the frames the visitor actually sees are never
+    // the ones paying for shader compilation.
+    if (frames.current === 0) gl.compile(scene, camera)
     frames.current += 1
     if (frames.current >= UI.warmupFrames) {
       fired.current = true
@@ -65,13 +74,19 @@ function EngagementHint() {
   )
 }
 
+// Only ever true in dev, and only when asked for, so the HUD can never cost a
+// visitor a frame.
+const showPerf = import.meta.env.DEV && new URLSearchParams(window.location.search).has('perf')
+
 export function Estate() {
   const [ready, setReady] = useState(false)
+  const [perf, setPerf] = useState<PerfSample | null>(null)
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
   const hasEngaged = useEstate((state) => state.hasEngaged)
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
   const clearSelection = useEstate((state) => state.clearSelection)
+  const rendering = useRenderGate(container)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -96,8 +111,9 @@ export function Estate() {
       >
         <Canvas
           shadows="percentage"
-          dpr={[1, 2]}
-          frameloop="always"
+          dpr={[1, PERF.maxPixelRatio]}
+          frameloop={rendering ? 'always' : 'never'}
+          onCreated={(state) => state.setDpr(pixelRatioFor(state.gl))}
           gl={{ antialias: true, powerPreference: 'high-performance' }}
           camera={{
             fov: CAMERA.fov,
@@ -117,6 +133,7 @@ export function Estate() {
             <Traffic />
             <CameraRig />
             <WarmUp onReady={() => setReady(true)} />
+            {showPerf && <PerfHud onSample={setPerf} />}
           </Suspense>
         </Canvas>
       </div>
@@ -130,6 +147,20 @@ export function Estate() {
       {ready && !hasEngaged && <EngagementHint />}
       {ready && <HoverLabel container={container} />}
       {ready && <PlotPanel />}
+
+      {showPerf && perf && (
+        <div className="pointer-events-none absolute left-3 top-3 border border-ink/20 bg-paper/95 px-3 py-2 font-mono text-[11px] leading-tight text-ink/80">
+          <div>calls {perf.calls} / 60</div>
+          <div>tris {(perf.triangles / 1000).toFixed(1)}k / 150k</div>
+          <div>
+            med {perf.medianMs.toFixed(1)}ms p95 {perf.worstMs.toFixed(1)}ms
+          </div>
+          <div>
+            {perf.fps.toFixed(0)}fps · {perf.programs} prog · {perf.geometries} geo ·{' '}
+            {perf.textures} tex
+          </div>
+        </div>
+      )}
     </div>
   )
 }
