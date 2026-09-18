@@ -1,3 +1,7 @@
+import type { PaletteToken } from '@/theme'
+
+export type BuildingProp = 'waterTank' | 'acUnit' | 'dish' | 'balcony' | 'chimney' | 'scooter' | 'hedge'
+
 export type Plot = {
   id: string
   plotNumber: string
@@ -14,10 +18,13 @@ export type Plot = {
   footprint: { w: number; d: number }
   floors: number
   // Roof shape and props are what make each building recognisable from the
-  // overview, so they are chosen per plot rather than generated.
+  // overview, so they are chosen per plot rather than generated. Any prop may
+  // go on any roof: the kit relocates the ones a pitched roof can't carry.
   roofStyle: 'gable' | 'hip' | 'flat' | 'terrace'
-  props: ('waterTank' | 'acUnit' | 'dish' | 'balcony' | 'chimney')[]
-  palette: { wall: string; roof: string; trim: string }
+  props: BuildingProp[]
+  // Theme token names, not colours. The roof is the plot's identity and must be
+  // unique across plots; walls and trim may repeat.
+  palette: { wall: PaletteToken; roof: PaletteToken; trim: PaletteToken }
   interior: {
     monitorContent: "chart" | "board" | "code" | "graph" | "docs"
     shelfItems: string[]
@@ -56,8 +63,8 @@ const definitions: PlotDefinition[] = [
     footprint: { w: 3.4, d: 2.8 },
     floors: 2,
     roofStyle: 'gable',
-    props: ['chimney', 'acUnit'],
-    palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
+    props: ['chimney', 'scooter'],
+    palette: { wall: 'sand', roof: 'clay', trim: 'ink' },
     interior: {
       monitorContent: "chart",
       shelfItems: ["React", "Node", "MongoDB"],
@@ -79,7 +86,7 @@ const definitions: PlotDefinition[] = [
     floors: 2,
     roofStyle: 'flat',
     props: ['dish', 'balcony'],
-    palette: { wall: "#e6ddca", roof: "#37506b", trim: "#1d2430" },
+    palette: { wall: 'paper', roof: 'indigo', trim: 'ink' },
     interior: {
       monitorContent: "board",
       shelfItems: ["React", "Express", "PostgreSQL"],
@@ -100,8 +107,8 @@ const definitions: PlotDefinition[] = [
     footprint: { w: 3.8, d: 2.6 },
     floors: 1,
     roofStyle: 'hip',
-    props: ['acUnit'],
-    palette: { wall: "#e6ddca", roof: "#4e7a4a", trim: "#1d2430" },
+    props: ['acUnit', 'hedge'],
+    palette: { wall: 'sand', roof: 'ochre', trim: 'ink' },
     interior: {
       monitorContent: "code",
       shelfItems: ["Python", "OpenCV", "TensorFlow"],
@@ -121,9 +128,9 @@ const definitions: PlotDefinition[] = [
     links: [{ label: "GitHub", href: "#" }],
     footprint: { w: 2.8, d: 3.2 },
     floors: 2,
-    roofStyle: 'gable',
-    props: ['chimney', 'balcony'],
-    palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
+    roofStyle: 'hip',
+    props: ['balcony', 'waterTank'],
+    palette: { wall: 'paper', roof: 'plum', trim: 'ink' },
     interior: {
       monitorContent: "docs",
       shelfItems: ["React", "Node", "Git API"],
@@ -145,7 +152,7 @@ const definitions: PlotDefinition[] = [
     floors: 3,
     roofStyle: 'terrace',
     props: ['waterTank', 'dish'],
-    palette: { wall: "#e6ddca", roof: "#37506b", trim: "#1d2430" },
+    palette: { wall: 'sand', roof: 'charcoal', trim: 'ink' },
     interior: {
       monitorContent: "graph",
       shelfItems: ["IoT", "Node.js", "InfluxDB"],
@@ -165,9 +172,9 @@ const definitions: PlotDefinition[] = [
     links: [],
     footprint: { w: 4.2, d: 3.4 },
     floors: 1,
-    roofStyle: 'hip',
-    props: ['chimney'],
-    palette: { wall: "#e6ddca", roof: "#4e7a4a", trim: "#1d2430" },
+    roofStyle: 'gable',
+    props: ['chimney', 'hedge'],
+    palette: { wall: 'sand', roof: 'sage', trim: 'ink' },
     interior: {
       monitorContent: "docs",
       shelfItems: ["Books", "Code", "Music"],
@@ -193,7 +200,9 @@ const definitions: PlotDefinition[] = [
     floors: 1,
     roofStyle: 'flat',
     props: [],
-    palette: { wall: "#e6ddca", roof: "#c2603f", trim: "#1d2430" },
+    // The noticeboard, not a building, so its swatch is deliberately neutral
+    // rather than borrowing a roof identity that belongs to a plot.
+    palette: { wall: 'sand', roof: 'ink', trim: 'ink' },
     interior: {
       monitorContent: "docs",
       shelfItems: [],

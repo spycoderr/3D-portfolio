@@ -19,8 +19,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { plots } from '@/data/plots'
 import { palette } from '@/theme'
 import { BOUNDARY, COLORS, COMMUNITY, ESTATE, PARK, ROAD, SLAB } from './constants'
-import { getLanePoint, getPointAt } from './curves'
-import { gateAnchor, isOnSlab, slabOutline } from './slab'
+import { getLanePoint, getPointAt, roadJunctions, roadLength, wrapU } from './curves'
+import { gateAnchor, gateT, isOnSlab, slabOutline } from './slab'
 
 // One material for every piece of static dressing. Colour rides on the vertices
 // instead, so nine separate props collapse into a single draw call.
@@ -79,6 +79,14 @@ function placeTrees(): TreePlacement[] {
     roadSamples.push(new Vector2(point.x, point.z))
   }
 
+  // The approach from the gate is road too, so it needs the same clearance.
+  const gate = gateAnchor()
+  getPointAt(roadJunctions().gate.u, point)
+  for (let index = 0; index <= 24; index += 1) {
+    const t = index / 24
+    roadSamples.push(new Vector2(gate.x + (point.x - gate.x) * t, gate.z + (point.z - gate.z) * t))
+  }
+
   const plotPoints = plots.map((plot) => new Vector2(plot.position[0], plot.position[2]))
   const pond = new Vector2(PARK.pondCentre[0], PARK.pondCentre[1])
   const community = new Vector2(COMMUNITY.position[0], COMMUNITY.position[2])
@@ -119,6 +127,25 @@ function placeTrees(): TreePlacement[] {
   return placements
 }
 
+// Streetlights spaced evenly round the ring, except that any lamp landing in a
+// junction is slid along the kerb until it clears it. Even spacing alone put a
+// lamp in the mouth of four of the six driveways.
+function placeLamps(): number[] {
+  const { plots: spurs, gate } = roadJunctions()
+  const junctions = [...spurs, gate]
+
+  return Array.from({ length: ESTATE.lampCount }, (_, index) => {
+    let u = index / ESTATE.lampCount
+    for (const junction of junctions) {
+      const clear = (junction.halfWidth + ESTATE.lampJunctionClearance) / roadLength
+      let delta = u - junction.u
+      delta -= Math.round(delta)
+      if (Math.abs(delta) < clear) u = junction.u + (delta >= 0 ? clear : -clear)
+    }
+    return wrapU(u)
+  })
+}
+
 // Wrapped distance around the outline, used to leave a gap for the gate.
 function outlineDistance(t: number, from: number): number {
   const delta = Math.abs(t - from)
@@ -133,7 +160,7 @@ function sweepBoundary(inset: number, width: number, height: number, colour: str
 
   for (let index = 0; index < BOUNDARY.divisions; index += 1) {
     const t = (index + 0.5) / BOUNDARY.divisions
-    if (outlineDistance(t, BOUNDARY.gateAt) < BOUNDARY.gateSpan / 2) continue
+    if (outlineDistance(t, gateT()) < BOUNDARY.gateSpan / 2) continue
 
     const a = points[index]
     const b = points[index + 1]
@@ -189,7 +216,10 @@ function buildGate(): BufferGeometry[] {
   )
   arch.rotateY(gate.angle)
   arch.translate(gate.x, 0, gate.z)
-  parts.push(tint(arch, palette.clay))
+  // Timber rather than ink: the gate sits at the front of the default view, and
+  // a black beam there reads as a monolith. Never a roof colour, since each of
+  // those belongs to a plot.
+  parts.push(tint(arch, palette.woodDark))
 
   return parts
 }
@@ -205,7 +235,9 @@ function buildCommunityBlock(): BufferGeometry[] {
     0,
   )
 
-  return [tint(walls, palette.sand), tint(roof, palette.sage)].map((part) => {
+  // Neutral roof: every accent colour is a plot's identity, and this block
+  // belongs to the society, not to any one plot.
+  return [tint(walls, palette.sand), tint(roof, palette.kerb)].map((part) => {
     part.rotateY(COMMUNITY.rotation)
     part.translate(COMMUNITY.position[0], 0, COMMUNITY.position[2])
     return part
@@ -223,6 +255,7 @@ type EstateResources = {
   // Everything with height, merged into one shadow-casting mesh.
   standing: BufferGeometry
   trees: TreePlacement[]
+  lamps: number[]
 }
 
 let resources: EstateResources | null = null
@@ -312,6 +345,7 @@ function getResources(): EstateResources {
       false,
     ),
     trees: placeTrees(),
+    lamps: placeLamps(),
   }
 
   return resources
@@ -322,13 +356,12 @@ export function Props() {
 
   const lampTransform = useMemo(
     () => (dummy: Object3D, index: number) => {
-      const u = index / ESTATE.lampCount
-      const point = getLanePoint(u, ROAD.width / 2 + ROAD.kerbWidth + 0.28, new Vector3())
+      const point = getLanePoint(parts.lamps[index], ROAD.width / 2 + ROAD.kerbWidth + 0.28, new Vector3())
       dummy.position.set(point.x, ROAD.kerbY, point.z)
       dummy.rotation.set(0, 0, 0)
       dummy.scale.setScalar(1)
     },
-    [],
+    [parts.lamps],
   )
 
   const benchTransform = useMemo(

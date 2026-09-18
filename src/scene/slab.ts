@@ -1,5 +1,6 @@
 import { Shape, Vector2 } from 'three'
-import { BOUNDARY, SLAB } from './constants'
+import { plots } from '@/data/plots'
+import { BOUNDARY, CAMERA, SLAB } from './constants'
 
 // The slab's outline, shared by everything that has to respect it: the slab
 // geometry itself, the boundary wall that follows it, and the tree scatter that
@@ -33,11 +34,65 @@ export function slabOutline(inset: number, divisions: number): Vector2[] {
   return slabShape(inset).getSpacedPoints(divisions)
 }
 
+function angleBetween(a: number, b: number): number {
+  return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))
+}
+
+let cachedGateT: number | null = null
+
+// Where round the outline the gate goes, as a fraction of it. Derived from the
+// plots rather than fixed, because a fixed fraction put the gate — and the road
+// through it — straight behind a building. The widest gap between neighbouring
+// plots wins; among equal gaps, the one facing the camera's resting position,
+// so the way in is the first thing a visitor sees. Any plot count works.
+export function gateT(): number {
+  if (cachedGateT !== null) return cachedGateT
+
+  const angles = plots
+    .filter((plot) => plot.kind !== 'contact')
+    .map((plot) => Math.atan2(plot.position[0], plot.position[2]))
+    .sort((a, b) => a - b)
+  const home = Math.atan2(CAMERA.homePosition[0], CAMERA.homePosition[2])
+
+  let target = home
+  let widest = -Infinity
+  let facing = Infinity
+  angles.forEach((angle, index) => {
+    const next = index + 1 < angles.length ? angles[index + 1] : angles[0] + Math.PI * 2
+    const gap = next - angle
+    const bisector = angle + gap / 2
+    const towardCamera = angleBetween(bisector, home)
+    const wider = gap > widest + 1e-6
+    const tiedButCloser = Math.abs(gap - widest) <= 1e-6 && towardCamera < facing
+    if (wider || tiedButCloser) {
+      widest = gap
+      facing = towardCamera
+      target = bisector
+    }
+  })
+
+  // Outline samples are (x, z) on the ground, so their bearing is atan2(x, z) —
+  // the same convention the plot angles above use.
+  const points = slabOutline(BOUNDARY.inset, BOUNDARY.divisions)
+  let bestIndex = 0
+  let bestDelta = Infinity
+  for (let index = 0; index < BOUNDARY.divisions; index += 1) {
+    const delta = angleBetween(Math.atan2(points[index].x, points[index].y), target)
+    if (delta < bestDelta) {
+      bestDelta = delta
+      bestIndex = index
+    }
+  }
+
+  cachedGateT = bestIndex / BOUNDARY.divisions
+  return cachedGateT
+}
+
 // Where the boundary opens. Shared, so the gate structure and the access road
 // that runs through it can never drift apart.
 export function gateAnchor(): { x: number; z: number; angle: number; gap: number } {
   const points = slabOutline(BOUNDARY.inset, BOUNDARY.divisions)
-  const index = Math.round(BOUNDARY.gateAt * BOUNDARY.divisions) % BOUNDARY.divisions
+  const index = Math.round(gateT() * BOUNDARY.divisions) % BOUNDARY.divisions
   const here = points[index]
   const next = points[index + 1]
 

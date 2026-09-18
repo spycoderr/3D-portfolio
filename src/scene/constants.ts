@@ -170,6 +170,8 @@ export const ESTATE = {
   treeSlabMargin: 2.5,
   lampCount: 14,
   lampHeight: 1.5,
+  // Extra room a lamp keeps beyond the edge of any driveway or crossing.
+  lampJunctionClearance: 0.55,
   noticeBoardWidth: 1.5,
   noticeBoardHeight: 0.95,
   noticeBoardPostHeight: 0.75,
@@ -186,8 +188,8 @@ export const BOUNDARY = {
   // Sampling resolution around the outline. High enough that the rounded
   // corners read as curves rather than facets.
   divisions: 168,
-  // Fraction of the outline left open for the gate, centred on gateAt.
-  gateAt: 0.375,
+  // Fraction of the outline left open for the gate. Where the gate goes is
+  // derived from the plot layout, not fixed here.
   gateSpan: 0.035,
   gatePillarHeight: 1.55,
   gatePillarSize: 0.5,
@@ -358,6 +360,31 @@ export const INTERIOR = {
   plantPotRadius: 0.13,
   plantPotHeight: 0.17,
   lampHeight: 0.3,
+} as const
+
+// Character props: the details that stop six boxes reading as six boxes. All
+// positions derive from the building they belong to, never from a plot index.
+export const BUILDING_PROPS = {
+  acWidth: 0.42,
+  acHeight: 0.32,
+  // How far the unit stands proud of the ground-storey wall it hangs on.
+  acProtrusion: 0.24,
+  acHeightFactor: 0.62,
+  // The hedge rings the side and back garden; the forecourt stays open so it
+  // never crowds the door, the nameplate or a parked scooter.
+  hedgeHeight: 0.42,
+  hedgeThickness: 0.26,
+  // Gap between the door step and the scooter parked beside it.
+  scooterClearance: 0.3,
+  scooterLength: 0.86,
+  // A pitched roof has nowhere to put an overhead tank, so it goes up on a
+  // stand behind the house — which is what a real one would do.
+  tankRadius: 0.3,
+  tankHeight: 0.45,
+  tankStandBehind: 0.45,
+  tankStandInset: 0.5,
+  legSize: 0.06,
+  dishBracket: 0.2,
 } as const
 
 // Building defaults

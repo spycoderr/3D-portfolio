@@ -4,7 +4,7 @@
 // hardcode a colour. Swapping the values below is meant to be the entire job of
 // re-skinning the site for a second instance.
 
-type Palette = {
+export type Palette = {
   // The void the slab floats in.
   groundFar: string
   // The model itself.
@@ -14,11 +14,15 @@ type Palette = {
   road: string
   roadMark: string
   kerb: string
-  // Building surfaces. The three accents are roof identities, one per plot.
+  // Building surfaces. Every roof colour is one plot's identity — it is how a
+  // tab-bar swatch points at a building — so no two plots may share one.
   sand: string
   clay: string
   indigo: string
   sage: string
+  ochre: string
+  plum: string
+  charcoal: string
   // Planting and water.
   grassDark: string
   hedge: string
@@ -63,6 +67,11 @@ const day: Palette = {
   clay: '#c2603f',
   indigo: '#3d5a80',
   sage: '#6d9a6a',
+  // Chosen to sit apart in hue from the three above rather than between them,
+  // so six roofs stay six distinct swatches at campus distance.
+  ochre: '#c9973e',
+  plum: '#7b4b6a',
+  charcoal: '#4b4f57',
   grassDark: '#a3bd88',
   hedge: '#587f45',
   trunk: '#7a5b42',
@@ -115,6 +124,10 @@ const dusk: Palette = {
 
 export const themes = { day, dusk } as const
 export type ThemeName = keyof typeof themes
+
+// Data refers to colours by name, never by value, so a theme swap — or the dusk
+// toggle re-resolving against its own palette — reaches every building.
+export type PaletteToken = keyof Palette
 
 // One accent, in both modes, used sparingly: active states, the wordmark dot,
 // the exhibit claim line.

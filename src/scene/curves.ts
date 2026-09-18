@@ -1,5 +1,7 @@
 import { CatmullRomCurve3, Vector3 } from 'three'
-import { ROAD, SCENE } from './constants'
+import { plots } from '@/data/plots'
+import { CROSSING, DRIVEWAY, ROAD, SCENE } from './constants'
+import { gateAnchor } from './slab'
 
 const UP = new Vector3(0, 1, 0)
 
@@ -85,4 +87,35 @@ export function nearestUTo(point: Vector3, samples = 720): number {
   }
 
   return bestU
+}
+
+// Everywhere something joins the ring, and how much road it occupies there.
+// Spurs, crossings and the gate approach are all built from this, and anything
+// placed along the kerb has to keep clear of all of it.
+export type Junction = { u: number; halfWidth: number }
+
+let junctions: { plots: Junction[]; gate: Junction } | null = null
+
+export function roadJunctions(): { plots: Junction[]; gate: Junction } {
+  if (junctions) return junctions
+
+  const point = new Vector3()
+  // A plot's junction is as wide as whichever is wider: its driveway, or the
+  // crossing painted where the driveway meets the road.
+  const crossingHalf =
+    (CROSSING.stripeCount * CROSSING.stripeWidth + (CROSSING.stripeCount - 1) * CROSSING.stripeGap) /
+    2
+  const gate = gateAnchor()
+
+  junctions = {
+    plots: plots
+      .filter((plot) => plot.kind !== 'contact')
+      .map((plot) => ({
+        u: nearestUTo(point.set(plot.position[0], 0, plot.position[2])),
+        halfWidth: Math.max(DRIVEWAY.width / 2, crossingHalf),
+      })),
+    gate: { u: nearestUTo(point.set(gate.x, 0, gate.z)), halfWidth: ROAD.width / 2 },
+  }
+
+  return junctions
 }

@@ -33,7 +33,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { useEstate } from '@/store/useEstate'
-import { BUILDING, CAMERA, COLORS, INTERIOR, REVEAL, UI } from './constants'
+import { palette } from '@/theme'
+import { BUILDING, BUILDING_PROPS, CAMERA, COLORS, INTERIOR, REVEAL, UI } from './constants'
 
 // One material per colour, shared by every building that uses it.
 const materialCache = new Map<string, MeshLambertMaterial>()
@@ -151,6 +152,20 @@ type BuildingParts = {
 
 const PAD_TOP = BUILDING.padBaseY + BUILDING.padHeight
 
+// Plots name their colours; the theme decides what those names are.
+function colours(plot: Plot) {
+  return {
+    wall: palette[plot.palette.wall],
+    roof: palette[plot.palette.roof],
+    trim: palette[plot.palette.trim],
+  }
+}
+
+// Only flat and terrace roofs give a prop somewhere level to stand.
+function hasDeck(plot: Plot): boolean {
+  return plot.roofStyle === 'flat' || plot.roofStyle === 'terrace'
+}
+
 function storeySize(plot: Plot, storey: number) {
   return {
     w: plot.footprint.w - storey * 2 * BUILDING.setback,
@@ -194,12 +209,13 @@ function roofAssembly(plot: Plot): BufferGeometry {
     }
   }
 
-  // Flat and terrace roofs have a deck to stand things on; pitched ones do not,
-  // so roof-mounted props are only assigned to the former in the plot data.
+  // Flat and terrace roofs have a deck to stand things on. On a pitched roof the
+  // tank and dish are built by bodyParts instead, so any data is valid.
   const deckY = wallTop + 0.12
+  const deck = hasDeck(plot)
 
   for (const prop of plot.props) {
-    if (prop === 'waterTank') {
+    if (prop === 'waterTank' && deck) {
       trim.push(cylinder(0.28, 0.42, top.w / 2 - 0.5, deckY + 0.35, -top.d / 2 + 0.5))
       for (const [lx, lz] of [
         [-0.16, -0.16],
@@ -210,7 +226,7 @@ function roofAssembly(plot: Plot): BufferGeometry {
         trim.push(box(0.05, 0.3, 0.05, top.w / 2 - 0.5 + lx, deckY + 0.15, -top.d / 2 + 0.5 + lz))
       }
     }
-    if (prop === 'dish') {
+    if (prop === 'dish' && deck) {
       const dishY = deckY + 0.17
       trim.push(cylinder(0.05, 0.34, -top.w / 2 + 0.45, dishY, top.d / 2 - 0.5))
       const bowl = new CylinderGeometry(0.22, 0.06, 0.14, 12)
@@ -232,10 +248,95 @@ function roofAssembly(plot: Plot): BufferGeometry {
     }
   }
 
+  const colour = colours(plot)
   return mergeParts([
-    ...accent.map((part) => tint(part, plot.palette.roof)),
-    ...trim.map((part) => tint(part, plot.palette.trim)),
+    ...accent.map((part) => tint(part, colour.roof)),
+    ...trim.map((part) => tint(part, colour.trim)),
   ])
+}
+
+// A scooter parked side-on across the forecourt, clear of the door step. Its
+// body takes the roof colour, so it reads as belonging to that house.
+function scooter(front: number): { accent: BufferGeometry[]; trim: BufferGeometry[] } {
+  const accent = [
+    box(0.2, 0.06, 0.46, 0, 0.17, 0.02),
+    box(0.26, 0.24, 0.34, 0, 0.3, -0.2),
+    box(0.2, 0.36, 0.08, 0, 0.35, 0.25),
+  ]
+  const trim = [box(0.2, 0.06, 0.3, 0, 0.45, -0.18), box(0.4, 0.05, 0.06, 0, 0.56, 0.27)]
+
+  for (const z of [-0.32, 0.32]) {
+    const wheel = new CylinderGeometry(0.11, 0.11, 0.07, 12)
+    wheel.rotateZ(Math.PI / 2)
+    wheel.translate(0, 0.11, z)
+    trim.push(wheel)
+  }
+
+  const x =
+    BUILDING.doorWidth / 2 + BUILDING_PROPS.scooterClearance + BUILDING_PROPS.scooterLength / 2
+  const z = front + BUILDING.doorStepDepth / 2 + BUILDING.padMargin / 2
+  for (const part of [...accent, ...trim]) {
+    part.rotateY(Math.PI / 2)
+    part.translate(x, PAD_TOP, z)
+  }
+
+  return { accent, trim }
+}
+
+// An overhead tank on a four-legged stand behind the house, for roofs that
+// have no deck to carry one.
+function tankStand(plot: Plot): BufferGeometry[] {
+  const { w, d } = plot.footprint
+  const top = PAD_TOP + plot.floors * BUILDING.floorHeight
+  const x = -(w / 2 - BUILDING_PROPS.tankStandInset)
+  const z = -(d / 2 + BUILDING.padMargin + BUILDING_PROPS.tankStandBehind)
+  const r = BUILDING_PROPS.tankRadius
+  const leg = BUILDING_PROPS.legSize
+
+  const parts: BufferGeometry[] = [
+    cylinder(r, BUILDING_PROPS.tankHeight, x, top + BUILDING_PROPS.tankHeight / 2, z),
+  ]
+  for (const [lx, lz] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ]) {
+    parts.push(box(leg, top, leg, x + lx * r * 0.7, top / 2, z + lz * r * 0.7))
+  }
+  return parts
+}
+
+// A dish bracketed to the top storey's side wall, below the eaves, facing out.
+function wallDish(plot: Plot): BufferGeometry[] {
+  const top = storeySize(plot, plot.floors - 1)
+  const y = PAD_TOP + plot.floors * BUILDING.floorHeight - 0.35
+  const x = -(top.w / 2 + BUILDING_PROPS.dishBracket / 2)
+  const z = top.d / 4
+
+  const bowl = new CylinderGeometry(0.22, 0.06, 0.14, 12)
+  bowl.rotateZ(Math.PI / 2 - 0.4)
+  bowl.translate(x - BUILDING_PROPS.dishBracket / 2, y, z)
+  return [box(BUILDING_PROPS.dishBracket, 0.05, 0.05, x, y, z), bowl]
+}
+
+// Low hedge along the sides and back of the pad. It stops level with the front
+// wall, leaving the forecourt open for the door, nameplate and scooter.
+function hedge(plot: Plot): BufferGeometry[] {
+  const { w, d } = plot.footprint
+  const t = BUILDING_PROPS.hedgeThickness
+  const h = BUILDING_PROPS.hedgeHeight
+  const halfW = w / 2 + BUILDING.padMargin - t / 2
+  const back = d / 2 + BUILDING.padMargin
+  const y = PAD_TOP + h / 2
+  const sideLength = back + d / 2
+  const sideCentre = (d / 2 - back) / 2
+
+  return [
+    box(t, h, sideLength, halfW, y, sideCentre),
+    box(t, h, sideLength, -halfW, y, sideCentre),
+    box(halfW * 2 + t, h, t, 0, y, -back + t / 2),
+  ]
 }
 
 // Storeys, door and wall-mounted props. The open variant leaves the top storey
@@ -280,12 +381,33 @@ function bodyParts(plot: Plot, includeTopStorey: boolean): BufferGeometry[] {
     ),
   )
 
-  const top = storeySize(plot, plot.floors - 1)
+  const planting: BufferGeometry[] = []
+  const deck = hasDeck(plot)
 
   for (const prop of plot.props) {
     if (prop === 'acUnit') {
-      trim.push(box(0.42, 0.32, 0.24, top.w / 2 + 0.12, PAD_TOP + BUILDING.floorHeight * 0.7, -d / 4))
+      // Sized off the ground storey it hangs on. Using the top storey's width
+      // buried the unit in the wall of anything taller than one floor.
+      const ground = storeySize(plot, 0)
+      trim.push(
+        box(
+          BUILDING_PROPS.acProtrusion,
+          BUILDING_PROPS.acHeight,
+          BUILDING_PROPS.acWidth,
+          ground.w / 2 + BUILDING_PROPS.acProtrusion / 2,
+          PAD_TOP + BUILDING.floorHeight * BUILDING_PROPS.acHeightFactor,
+          -d / 4,
+        ),
+      )
     }
+    if (prop === 'scooter') {
+      const parked = scooter(front)
+      accent.push(...parked.accent)
+      trim.push(...parked.trim)
+    }
+    if (prop === 'hedge') planting.push(...hedge(plot))
+    if (prop === 'waterTank' && !deck) trim.push(...tankStand(plot))
+    if (prop === 'dish' && !deck) trim.push(...wallDish(plot))
     if (prop === 'balcony' && plot.floors > 1) {
       const size = storeySize(plot, 1)
       const y = PAD_TOP + BUILDING.floorHeight
@@ -299,10 +421,12 @@ function bodyParts(plot: Plot, includeTopStorey: boolean): BufferGeometry[] {
     }
   }
 
+  const colour = colours(plot)
   return [
-    ...walls.map((part) => tint(part, plot.palette.wall)),
-    ...accent.map((part) => tint(part, plot.palette.roof)),
-    ...trim.map((part) => tint(part, plot.palette.trim)),
+    ...walls.map((part) => tint(part, colour.wall)),
+    ...accent.map((part) => tint(part, colour.roof)),
+    ...trim.map((part) => tint(part, colour.trim)),
+    ...planting.map((part) => tint(part, palette.hedge)),
   ]
 }
 
@@ -391,7 +515,7 @@ function composeOpenParts(plot: Plot): OpenParts {
     z: number,
     normal: Vector3,
   ) => ({
-    geometry: tint(box(width, height, depth, x, baseY + height / 2, z), plot.palette.wall),
+    geometry: tint(box(width, height, depth, x, baseY + height / 2, z), colours(plot).wall),
     normal,
   })
 

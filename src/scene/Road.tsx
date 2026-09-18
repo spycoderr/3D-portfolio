@@ -16,6 +16,7 @@ import {
   getPointAt,
   getTangentAt,
   nearestUTo,
+  roadJunctions,
   roadLength,
 } from './curves'
 import { gateAnchor } from './slab'
@@ -56,16 +57,7 @@ function buildRibbon(halfWidth: number, y: number): BufferGeometry {
 // Where each plot meets the ring. Both the spur and its crossing hang off this,
 // so a crossing can never drift away from the driveway it belongs to.
 function spurPoints(): number[] {
-  const plotPoint = new Vector3()
-  const us: number[] = []
-
-  for (const plot of plots) {
-    if (plot.kind === 'contact') continue
-    plotPoint.set(plot.position[0], 0, plot.position[2])
-    us.push(nearestUTo(plotPoint))
-  }
-
-  return us
+  return roadJunctions().plots.map((junction) => junction.u)
 }
 
 // A flat quad laid between two ground points, which is all a spur or the
@@ -166,7 +158,7 @@ function buildDriveways(): BufferGeometry {
   // leads somewhere instead of being a gate into a wall.
   const gate = gateAnchor()
   const gatePoint = new Vector3(gate.x, 0, gate.z)
-  const gateU = nearestUTo(gatePoint)
+  const gateU = roadJunctions().gate.u
   getPointAt(gateU, centre)
   getNormalAt(gateU, normal)
   toPlot.copy(gatePoint).sub(centre)

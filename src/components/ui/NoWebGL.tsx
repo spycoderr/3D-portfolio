@@ -1,4 +1,5 @@
 import { plots } from '@/data/plots'
+import { palette } from '@/theme'
 
 export function NoWebGL() {
   return (
@@ -12,7 +13,7 @@ export function NoWebGL() {
           <li key={plot.id} className="flex items-baseline gap-3">
             <span
               className="h-3 w-3 shrink-0 translate-y-0.5"
-              style={{ backgroundColor: plot.palette.roof }}
+              style={{ backgroundColor: palette[plot.palette.roof] }}
             />
             <span className="font-body text-step-1 text-ink">{plot.title}</span>
             <span className="font-body text-step-0 text-ink/50">{plot.tagline}</span>

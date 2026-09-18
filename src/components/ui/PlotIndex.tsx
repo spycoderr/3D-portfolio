@@ -1,4 +1,5 @@
 import { plots } from '@/data/plots'
+import { palette } from '@/theme'
 import { useEstate } from '@/store/useEstate'
 
 // A text directory beside the canvas, so a plot is reachable without hunting
@@ -36,7 +37,7 @@ export function PlotIndex() {
             <span
               aria-hidden
               className="h-2 w-2 shrink-0 rounded-full transition-opacity"
-              style={{ backgroundColor: plot.palette.roof, opacity: active ? 1 : 0.3 }}
+              style={{ backgroundColor: palette[plot.palette.roof], opacity: active ? 1 : 0.3 }}
             />
           </button>
         )
