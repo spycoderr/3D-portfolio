@@ -1,50 +1,47 @@
 import { plots } from '@/data/plots'
+import { profile } from '@/data/profile'
+import { site } from '@/data/site'
 import { useEstate } from '@/store/useEstate'
-import { ACCENT, palette } from '@/theme'
+import { ACCENT } from '@/theme'
 
-// A text directory beside the canvas, so a plot is reachable without hunting
-// for its building on the ring — the only path in on a coarse pointer, where
-// hover has nothing to sync to.
-const directoryPlots = plots.filter((plot) => plot.kind !== 'contact')
+// The destinations, in reading order: who, then the work, then the resume.
+// Contact is the noticeboard in the park, not a place to go into.
+const destinations = [
+  ...plots.filter((plot) => plot.kind === 'about'),
+  ...plots.filter((plot) => plot.kind === 'project'),
+]
 
-// Inside a room the directory gives way to that room's exhibits. Hovering an
-// entry lights its object and hovering the object lights its entry, because
-// both read and write the same store field.
-function ExhibitList({ plotId }: { plotId: string }) {
+// Inside a room the destinations give way to that room's own contents.
+// Hovering an exhibit here lights its object in the scene and hovering the
+// object lights it here, because both read and write the same store field.
+function RoomContents({ plotId }: { plotId: string }) {
   const plot = plots.find((entry) => entry.id === plotId)
   const hoveredExhibitId = useEstate((state) => state.hoveredExhibitId)
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
   const setHoveredExhibit = useEstate((state) => state.setHoveredExhibit)
-  const selectExhibit = useEstate((state) => state.selectExhibit)
-  const clearSelection = useEstate((state) => state.clearSelection)
+  const goToExhibit = useEstate((state) => state.goToExhibit)
   if (!plot) return null
 
   return (
-    <nav aria-label={`Inside ${plot.title}`} className="mt-14 flex flex-col">
-      <button
-        type="button"
-        onClick={clearSelection}
-        className="self-start font-body text-step-0 text-ink/60 hover:text-ink"
-      >
-        ← All plots
-      </button>
-      <div className="mt-4 font-body text-step-0 text-ink/50">{plot.plotNumber}</div>
-      <div className="font-display text-step-3 leading-tight text-ink">{plot.title}</div>
+    <nav aria-label={`Inside ${plot.title}`} className="pointer-events-auto flex flex-col">
+      <p className="font-body text-step-0 text-ink/50">{plot.eyebrow}</p>
+      <h2 className="mt-1 font-display text-step-3 leading-tight text-ink">{plot.roomHeadline}</h2>
+      <p className="mt-1 max-w-[32ch] font-body text-step-0 text-ink/70">{plot.subhead}</p>
 
-      <ul className="mt-5 flex flex-col border-t border-ink/15">
+      <ul className="mt-4 flex flex-col">
         {plot.exhibits.map((exhibit) => {
           const lit = exhibit.id === hoveredExhibitId || exhibit.id === activeExhibitId
           return (
             <li key={exhibit.id}>
               <button
                 type="button"
-                onClick={() => selectExhibit(exhibit.id)}
+                onClick={() => goToExhibit(exhibit.id)}
                 onMouseEnter={() => setHoveredExhibit(exhibit.id)}
                 onMouseLeave={() => setHoveredExhibit(null)}
                 onFocus={() => setHoveredExhibit(exhibit.id)}
                 onBlur={() => setHoveredExhibit(null)}
                 aria-current={exhibit.id === activeExhibitId ? 'true' : undefined}
-                className="w-full border-b border-ink/15 py-3 text-left font-body text-step-1"
+                className="py-1 text-left font-body text-step-1 text-ink"
                 style={{ color: lit ? ACCENT : undefined }}
               >
                 {exhibit.name}
@@ -58,42 +55,44 @@ function ExhibitList({ plotId }: { plotId: string }) {
 }
 
 export function PlotIndex() {
-  const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const activePlotId = useEstate((state) => state.activePlotId)
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
-  const selectPlot = useEstate((state) => state.selectPlot)
+  const goToPlot = useEstate((state) => state.goToPlot)
   const setHovered = useEstate((state) => state.setHovered)
 
-  if (selectedPlotId) return <ExhibitList plotId={selectedPlotId} />
+  if (activePlotId) return <RoomContents plotId={activePlotId} />
 
   return (
-    <nav aria-label="Plot directory" className="mt-14 flex flex-col border-t border-ink/15">
-      {directoryPlots.map((plot) => {
-        const active = plot.id === hoveredPlotId
-        return (
-          <button
-            key={plot.id}
-            type="button"
-            onClick={() => selectPlot(plot.id)}
-            onMouseEnter={() => setHovered(plot.id)}
-            onMouseLeave={() => setHovered(null)}
-            onFocus={() => setHovered(plot.id)}
-            onBlur={() => setHovered(null)}
-            className="group flex items-baseline justify-between gap-4 border-b border-ink/15 py-3 text-left"
+    <nav aria-label="Destinations" className="pointer-events-auto">
+      <ul className="flex flex-col">
+        {destinations.map((plot) => (
+          <li key={plot.id}>
+            <button
+              type="button"
+              onClick={() => goToPlot(plot.id)}
+              onMouseEnter={() => setHovered(plot.id)}
+              onMouseLeave={() => setHovered(null)}
+              onFocus={() => setHovered(plot.id)}
+              onBlur={() => setHovered(null)}
+              className="py-1 text-left font-body text-step-1 text-ink"
+              style={{ color: plot.id === hoveredPlotId ? ACCENT : undefined }}
+            >
+              {plot.title}
+            </button>
+          </li>
+        ))}
+        <li>
+          <a
+            href={profile.resume}
+            target="_blank"
+            rel="noreferrer"
+            className="block py-1 font-body text-step-1 text-ink hover:text-[color:var(--accent)]"
+            style={{ ['--accent' as string]: ACCENT }}
           >
-            <span className="flex items-baseline gap-3">
-              <span className="font-body text-step-0 text-ink/40">{plot.plotNumber}</span>
-              <span className={`font-body text-step-1 ${active ? 'text-ink' : 'text-ink/70'}`}>
-                {plot.title}
-              </span>
-            </span>
-            <span
-              aria-hidden
-              className="h-2 w-2 shrink-0 rounded-full transition-opacity"
-              style={{ backgroundColor: palette[plot.palette.roof], opacity: active ? 1 : 0.3 }}
-            />
-          </button>
-        )
-      })}
+            {site.resumeLabel}
+          </a>
+        </li>
+      </ul>
     </nav>
   )
 }

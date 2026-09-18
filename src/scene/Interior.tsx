@@ -362,7 +362,7 @@ function ExhibitMesh({ built }: { built: BuiltExhibit }) {
   const releaseTimer = useRef<number | null>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
   const setHoveredExhibit = useEstate((state) => state.setHoveredExhibit)
-  const selectExhibit = useEstate((state) => state.selectExhibit)
+  const goToExhibit = useEstate((state) => state.goToExhibit)
   const raycast = useMemo(() => boxRaycast(built.bounds), [built])
   const id = built.exhibit.id
 
@@ -415,7 +415,7 @@ function ExhibitMesh({ built }: { built: BuiltExhibit }) {
         onClick={(event) => {
           if (event.delta > UI.dragThresholdPx) return
           event.stopPropagation()
-          selectExhibit(id)
+          goToExhibit(id)
         }}
       />
     </group>
@@ -424,7 +424,7 @@ function ExhibitMesh({ built }: { built: BuiltExhibit }) {
 
 function Room({ plot }: { plot: Plot }) {
   const built = useMemo(() => ({ shell: buildShell(plot), exhibits: buildExhibits(plot) }), [plot])
-  const clearExhibit = useEstate((state) => state.clearExhibit)
+  const backToInterior = useEstate((state) => state.backToInterior)
 
   useFrame(() => {
     roomLight.value = stage(DUSK.cascadeStart, DUSK.cascadeStart + DUSK.cascadeSpan + DUSK.windowFade)
@@ -461,7 +461,7 @@ function Room({ plot }: { plot: Plot }) {
         onClick={(event) => {
           if (event.delta > UI.dragThresholdPx) return
           event.stopPropagation()
-          if (useEstate.getState().activeExhibitId) clearExhibit()
+          if (useEstate.getState().activeExhibitId) backToInterior()
         }}
       />
       {built.exhibits.map((exhibit) => (
@@ -500,8 +500,8 @@ export function precompileRoomMaterials(gl: WebGLRenderer, camera: Camera, scene
 }
 
 export function Interiors() {
-  const selectedPlotId = useEstate((state) => state.selectedPlotId)
-  const plot = selectedPlotId ? plots.find((entry) => entry.id === selectedPlotId) : null
+  const activePlotId = useEstate((state) => state.activePlotId)
+  const plot = activePlotId ? plots.find((entry) => entry.id === activePlotId) : null
   if (!plot || plot.exhibits.length === 0) return null
 
   // Keyed by plot, so moving between rooms tears the old one down completely.

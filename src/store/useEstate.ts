@@ -22,83 +22,96 @@ function write(key: string, value: string) {
   }
 }
 
-// Overview is the campus; focused is inside a plot's room. An open exhibit is
-// a third level layered on focused rather than a separate mode, because the
-// camera stays in the same room — only the panel and framing change.
-export type CameraMode = 'overview' | 'focused'
+// Where the visitor is: the whole estate, inside one plot's room, or looking
+// at one exhibit in that room. Set together with the ids in every action, so
+// the level and the ids can never disagree.
+export type Level = 'campus' | 'interior' | 'exhibit'
+
+// The campus view the visitor left from, restored when they come back to it.
+// The campus is always looked at from its centre, so the angles and distance
+// are the whole of it.
+export type CampusCamera = { theta: number; phi: number; radius: number }
 
 type EstateState = {
-  mode: CameraMode
-  selectedPlotId: string | null
-  // Until the visitor deliberately engages, the canvas stays out of the way:
-  // the wheel scrolls the page and a touch swipe scrolls it too.
-  hasEngaged: boolean
-  hoveredPlotId: string | null
-  // The exhibit whose panel is open. Only meaningful inside the selected plot.
+  level: Level
+  activePlotId: string | null
+  // The exhibit whose panel is open. Only ever set inside the active plot.
   activeExhibitId: string | null
-  // One field for both the object in the room and its entry in the list, which
-  // is what makes hovering either one light up the other.
-  hoveredExhibitId: string | null
   theme: ThemeName
   // Freezes every ambient motion: traffic and the idle drift. Camera moves the
   // visitor asks for still run.
   paused: boolean
+  // Until the visitor deliberately interacts, the canvas stays out of the way:
+  // the wheel scrolls the page and a touch swipe scrolls it too.
+  hasInteracted: boolean
+  campusCamera: CampusCamera | null
+  hoveredPlotId: string | null
+  // One field for both the object in the room and its entry in the list, which
+  // is what makes hovering either one light up the other.
+  hoveredExhibitId: string | null
   // Bumped to ask the camera to reframe its current level. A counter rather
   // than a flag, so asking twice in a row still reaches the camera twice.
   resetRequest: number
-  engage: () => void
-  setHovered: (id: string | null) => void
-  selectPlot: (id: string) => void
-  clearSelection: () => void
-  setHoveredExhibit: (id: string | null) => void
-  selectExhibit: (id: string) => void
-  clearExhibit: () => void
+
+  goToPlot: (id: string) => void
+  goToExhibit: (id: string) => void
+  backToInterior: () => void
+  backToCampus: () => void
   // Steps back exactly one level: exhibit to room, room to campus.
   back: () => void
+  markInteracted: () => void
+  setCampusCamera: (view: CampusCamera | null) => void
+  setHovered: (id: string | null) => void
+  setHoveredExhibit: (id: string | null) => void
   toggleTheme: () => void
   togglePaused: () => void
   requestReset: () => void
 }
 
 export const useEstate = create<EstateState>()((set, get) => ({
-  mode: 'overview',
-  selectedPlotId: null,
-  hasEngaged: false,
-  hoveredPlotId: null,
+  level: 'campus',
+  activePlotId: null,
   activeExhibitId: null,
-  hoveredExhibitId: null,
   theme: read(THEME_KEY) === 'dusk' ? 'dusk' : 'day',
   paused: read(PAUSED_KEY) === 'true',
+  hasInteracted: false,
+  campusCamera: null,
+  hoveredPlotId: null,
+  hoveredExhibitId: null,
   resetRequest: 0,
 
-  engage: () => set({ hasEngaged: true }),
+  // Entering a room never carries an exhibit over from the last one.
+  goToPlot: (id) =>
+    set({
+      level: 'interior',
+      activePlotId: id,
+      activeExhibitId: null,
+      hoveredExhibitId: null,
+      hasInteracted: true,
+    }),
+
+  goToExhibit: (id) =>
+    set((state) => (state.activePlotId ? { level: 'exhibit', activeExhibitId: id } : state)),
+
+  backToInterior: () =>
+    set((state) => (state.activePlotId ? { level: 'interior', activeExhibitId: null } : state)),
+
+  backToCampus: () =>
+    set({ level: 'campus', activePlotId: null, activeExhibitId: null, hoveredExhibitId: null }),
+
+  back: () => {
+    const { level, backToInterior, backToCampus } = get()
+    if (level === 'exhibit') backToInterior()
+    else if (level === 'interior') backToCampus()
+  },
+
+  markInteracted: () => set({ hasInteracted: true }),
+
+  setCampusCamera: (view) => set({ campusCamera: view }),
 
   setHovered: (id) => set({ hoveredPlotId: id }),
 
-  // Entering a room never carries an exhibit over from the last one.
-  selectPlot: (id) =>
-    set({
-      mode: 'focused',
-      selectedPlotId: id,
-      hasEngaged: true,
-      activeExhibitId: null,
-      hoveredExhibitId: null,
-    }),
-
-  clearSelection: () =>
-    set({ mode: 'overview', selectedPlotId: null, activeExhibitId: null, hoveredExhibitId: null }),
-
   setHoveredExhibit: (id) => set({ hoveredExhibitId: id }),
-
-  selectExhibit: (id) => set((state) => (state.selectedPlotId ? { activeExhibitId: id } : state)),
-
-  clearExhibit: () => set({ activeExhibitId: null }),
-
-  back: () => {
-    const { activeExhibitId, selectedPlotId, clearExhibit, clearSelection } = get()
-    if (activeExhibitId) clearExhibit()
-    else if (selectedPlotId) clearSelection()
-  },
 
   toggleTheme: () =>
     set((state) => {

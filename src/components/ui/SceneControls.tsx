@@ -30,7 +30,7 @@ const icon = {
 }
 
 export function SceneControls() {
-  const mode = useEstate((state) => state.mode)
+  const level = useEstate((state) => state.level)
   const theme = useEstate((state) => state.theme)
   const paused = useEstate((state) => state.paused)
   const togglePaused = useEstate((state) => state.togglePaused)
@@ -43,7 +43,7 @@ export function SceneControls() {
     <div
       className={`absolute right-3 top-3 z-20 flex items-center gap-2 ${exhibitOpen ? 'lg:right-[392px]' : ''}`}
     >
-      {mode === 'overview' ? (
+      {level === 'campus' ? (
         <RoundButton label={theme === 'day' ? 'Switch to dusk' : 'Switch to day'} onClick={toggleTheme}>
           {theme === 'day' ? (
             <svg {...icon}>

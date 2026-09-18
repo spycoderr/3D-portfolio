@@ -19,13 +19,13 @@ function resolve(key: Key): { plot: Plot; exhibit: Exhibit } | null {
 // slides the content out instead of blanking it mid-animation. Closing returns
 // to the room, not to the campus.
 export function PlotPanel() {
-  const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const activePlotId = useEstate((state) => state.activePlotId)
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
-  const clearExhibit = useEstate((state) => state.clearExhibit)
+  const backToInterior = useEstate((state) => state.backToInterior)
   const prefersReducedMotion = usePrefersReducedMotion()
 
   const currentKey: Key | null =
-    selectedPlotId && activeExhibitId ? `${selectedPlotId}/${activeExhibitId}` : null
+    activePlotId && activeExhibitId ? `${activePlotId}/${activeExhibitId}` : null
 
   const [shownKey, setShownKey] = useState<Key | null>(currentKey)
   const closeTimer = useRef<number | null>(null)
@@ -65,7 +65,7 @@ export function PlotPanel() {
       >
         <button
           type="button"
-          onClick={clearExhibit}
+          onClick={backToInterior}
           aria-label="Close exhibit"
           className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center border border-ink/20 font-body text-step-1 leading-none text-ink/60 hover:border-ink/50 hover:text-ink"
         >

@@ -9,4 +9,6 @@ export const site = {
     'Drag to look around, then click one to step inside.',
   ],
   orientationDismiss: 'Got it',
+  // The last destination in the list, which opens the PDF rather than a room.
+  resumeLabel: 'My resume',
 } as const

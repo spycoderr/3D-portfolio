@@ -53,7 +53,7 @@ function WarmUp({ onReady }: { onReady: () => void }) {
 }
 
 function EngagementHint() {
-  const engage = useEstate((state) => state.engage)
+  const engage = useEstate((state) => state.markInteracted)
   const coarsePointer = useCoarsePointer()
 
   const label = (
@@ -100,11 +100,11 @@ export function Estate() {
   const [perf, setPerf] = useState<PerfSample | null>(null)
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
-  const hasEngaged = useEstate((state) => state.hasEngaged)
+  const hasInteracted = useEstate((state) => state.hasInteracted)
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
   const hoveredExhibitId = useEstate((state) => state.hoveredExhibitId)
   const back = useEstate((state) => state.back)
-  const clearExhibit = useEstate((state) => state.clearExhibit)
+  const backToInterior = useEstate((state) => state.backToInterior)
   const rendering = useRenderGate(container)
 
   useEffect(() => {
@@ -137,7 +137,7 @@ export function Estate() {
           // A click that lands on nothing interactive closes an open exhibit.
           // r3f only reports a miss for a click, never for the end of a drag.
           onPointerMissed={() => {
-            if (useEstate.getState().activeExhibitId) clearExhibit()
+            if (useEstate.getState().activeExhibitId) backToInterior()
           }}
           gl={{ antialias: true, powerPreference: 'high-performance' }}
           camera={{
@@ -173,14 +173,14 @@ export function Estate() {
 
       {!loaderGone && <LoadingScreen progress={progress} leaving={ready} />}
 
-      {ready && !hasEngaged && <EngagementHint />}
+      {ready && !hasInteracted && <EngagementHint />}
       {ready && <HoverLabel container={container} />}
       {ready && <PlotPanel />}
       {ready && <SceneControls />}
       {loaderGone && <FirstRunCard />}
 
       {showPerf && perf && (
-        <div className="pointer-events-none absolute left-3 top-3 border border-ink/20 bg-paper/95 px-3 py-2 font-mono text-[11px] leading-tight text-ink/80">
+        <div className="pointer-events-none absolute bottom-3 right-3 z-40 border border-ink/20 bg-paper/95 px-3 py-2 font-mono text-[11px] leading-tight text-ink/80">
           <div>calls {perf.calls} / 60</div>
           <div>tris {(perf.triangles / 1000).toFixed(1)}k / 150k</div>
           <div>

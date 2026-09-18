@@ -25,7 +25,7 @@ function remember() {
 // Shown once, over the campus: what the estate is and how to use it. Going
 // into a building counts as having understood it, as much as dismissing does.
 export function FirstRunCard() {
-  const mode = useEstate((state) => state.mode)
+  const level = useEstate((state) => state.level)
   const prefersReducedMotion = usePrefersReducedMotion()
   const [seen, setSeen] = useState(alreadySeen)
   const [visible, setVisible] = useState(false)
@@ -41,14 +41,14 @@ export function FirstRunCard() {
   useEffect(
     () =>
       useEstate.subscribe((state) => {
-        if (state.mode !== 'focused') return
+        if (state.level === 'campus') return
         remember()
         setSeen(true)
       }),
     [],
   )
 
-  if (seen || mode !== 'overview') return null
+  if (seen || level !== 'campus') return null
 
   const dismiss = () => {
     remember()
@@ -58,7 +58,7 @@ export function FirstRunCard() {
   return (
     <div
       role="note"
-      className="pointer-events-auto absolute inset-x-3 top-16 z-20 mx-auto flex max-w-[300px] items-start gap-3 border border-ink/15 bg-paper/95 p-4 transition-opacity ease-out sm:inset-x-auto sm:left-3 sm:top-3 sm:mx-0"
+      className="pointer-events-auto absolute inset-x-3 top-20 z-[36] mx-auto flex max-w-[300px] items-start gap-3 border border-ink/15 bg-paper/95 p-4 transition-opacity ease-out sm:top-5"
       style={{
         opacity: visible ? 1 : 0,
         transitionDuration: prefersReducedMotion ? '0ms' : `${UI.panelTransitionMs}ms`,

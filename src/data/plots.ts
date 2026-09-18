@@ -35,6 +35,11 @@ export type Plot = {
   id: string
   plotNumber: string
   title: string
+  // Inside the room, the left overlay reads: eyebrow ("Plot 02 · 2025"), the
+  // room's headline, then a one-line subhead above the exhibit list.
+  eyebrow: string
+  roomHeadline: string
+  subhead: string
   kind: "project" | "about" | "contact"
   tagline: string
   summary: string
@@ -80,6 +85,10 @@ const definitions: PlotDefinition[] = [
     id: "spendsense",
     plotNumber: "Plot 01",
     title: "SpendSense",
+    // Year and wording to be written in R8.
+    eyebrow: "Plot 01",
+    roomHeadline: "Inside SpendSense",
+    subhead: "Placeholder subhead. Written in R8.",
     kind: "project",
     tagline: "Smart expense tracking and insights",
     summary: "Placeholder summary for SpendSense. To be written in Phase 11.",
@@ -102,6 +111,10 @@ const definitions: PlotDefinition[] = [
     id: "pulsedesk",
     plotNumber: "Plot 02",
     title: "PulseDesk",
+    // Year and wording to be written in R8.
+    eyebrow: "Plot 02",
+    roomHeadline: "Inside PulseDesk",
+    subhead: "Placeholder subhead. Written in R8.",
     kind: "project",
     tagline: "Collaboration and task management",
     summary: "Placeholder summary for PulseDesk. To be written in Phase 11.",
@@ -124,6 +137,10 @@ const definitions: PlotDefinition[] = [
     id: "fingerprint",
     plotNumber: "Plot 03",
     title: "Fingerprint Match",
+    // Year and wording to be written in R8.
+    eyebrow: "Plot 03",
+    roomHeadline: "Inside Fingerprint Match",
+    subhead: "Placeholder subhead. Written in R8.",
     kind: "project",
     tagline: "Biometric recognition system",
     summary: "Placeholder summary for Fingerprint Match. To be written in Phase 11.",
@@ -146,6 +163,10 @@ const definitions: PlotDefinition[] = [
     id: "finalsay",
     plotNumber: "Plot 04",
     title: "FinalSay",
+    // Year and wording to be written in R8.
+    eyebrow: "Plot 04",
+    roomHeadline: "Inside FinalSay",
+    subhead: "Placeholder subhead. Written in R8.",
     kind: "project",
     tagline: "Document version control and collaboration",
     summary: "Placeholder summary for FinalSay. To be written in Phase 11.",
@@ -168,6 +189,10 @@ const definitions: PlotDefinition[] = [
     id: "wattsense",
     plotNumber: "Plot 05",
     title: "WattSense",
+    // Year and wording to be written in R8.
+    eyebrow: "Plot 05",
+    roomHeadline: "Inside WattSense",
+    subhead: "Placeholder subhead. Written in R8.",
     kind: "project",
     tagline: "Real-time energy monitoring",
     summary: "Placeholder summary for WattSense. To be written in Phase 11.",
@@ -190,6 +215,10 @@ const definitions: PlotDefinition[] = [
     id: "about",
     plotNumber: "About",
     title: "About",
+    // Year and wording to be written in R8.
+    eyebrow: "About",
+    roomHeadline: "Inside About",
+    subhead: "Placeholder subhead. Written in R8.",
     kind: "about",
     tagline: "Who I am",
     summary: "Placeholder summary. To be written in Phase 11.",
@@ -217,6 +246,9 @@ const definitions: PlotDefinition[] = [
     id: "contact",
     plotNumber: "Contact",
     title: "Contact",
+    eyebrow: "",
+    roomHeadline: "",
+    subhead: "",
     kind: "contact",
     tagline: "Get in touch",
     summary: "Placeholder summary. To be written in Phase 11.",

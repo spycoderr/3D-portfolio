@@ -8,6 +8,11 @@ export const profile = {
   github: "https://github.com/spycoderr",
   linkedin: "https://linkedin.com/in/nilabh-kishore-gupta",
   leetcode: "https://leetcode.com/u/spycoder07",
+  // Served from public/. Linked from the destination list as "My resume".
+  resume: "/resume.pdf",
+  // The one-line role under the wordmark.
+  wordmark: "nilabh",
+  roleLine: "computer engineering",
   skills: {
     languages: ["JavaScript", "TypeScript", "Python", "C++"],
     frontend: ["React", "Tailwind CSS", "Framer Motion"],

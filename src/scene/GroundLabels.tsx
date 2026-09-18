@@ -109,17 +109,17 @@ function getResources() {
 export function GroundLabels() {
   const { geometry, material } = getResources()
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
-  const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const activePlotId = useEstate((state) => state.activePlotId)
 
   // Target per plot, recomputed only when the selection actually changes.
   const targets = useMemo(
     () =>
       buildingPlots.map((plot) =>
-        plot.id === hoveredPlotId || plot.id === selectedPlotId
+        plot.id === hoveredPlotId || plot.id === activePlotId
           ? GROUND_LABEL.activeOpacity
           : GROUND_LABEL.restOpacity,
       ),
-    [hoveredPlotId, selectedPlotId],
+    [hoveredPlotId, activePlotId],
   )
 
   const current = useRef<number[]>(buildingPlots.map(() => GROUND_LABEL.restOpacity))

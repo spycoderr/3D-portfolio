@@ -569,15 +569,15 @@ function BuildingGroup({
   const raycast = useMemo(() => boxRaycast(colliderBox(plot)), [plot])
 
   const setHovered = useEstate((state) => state.setHovered)
-  const selectPlot = useEstate((state) => state.selectPlot)
+  const goToPlot = useEstate((state) => state.goToPlot)
   // The lift is only a few percent of a building's height, so at overview
   // distance the brightened pad is what actually reads as the hover cue.
   const isHighlighted = useEstate(
-    (state) => state.selectedPlotId === plot.id || state.hoveredPlotId === plot.id,
+    (state) => state.activePlotId === plot.id || state.hoveredPlotId === plot.id,
   )
   // While its plot is open, the room in Interior.tsx stands in for this
   // building, so the shell neither draws nor catches the pointer.
-  const isActive = useEstate((state) => state.selectedPlotId === plot.id)
+  const isActive = useEstate((state) => state.activePlotId === plot.id)
 
   const releaseTimer = useRef<number | null>(null)
 
@@ -627,7 +627,7 @@ function BuildingGroup({
           // regardless; anything past the threshold was an orbit drag.
           if (event.delta > UI.dragThresholdPx) return
           event.stopPropagation()
-          selectPlot(plot.id)
+          goToPlot(plot.id)
         }}
       />
       </group>
@@ -852,7 +852,7 @@ export function Buildings() {
   }, [matrices])
 
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
-  const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const activePlotId = useEstate((state) => state.activePlotId)
   const coarsePointer = useCoarsePointer()
 
   const register = useCallback((id: string, group: Object3D | null) => {
@@ -863,13 +863,13 @@ export function Buildings() {
   useFrame((_, delta) => {
     const windows = windowsRef.current
     const smoothing = 1 - Math.pow(UI.hoverLiftDecay, Math.min(delta, CAMERA.maxFrameDelta))
-    const roomChanged = selectedPlotId !== hiddenFor.current
+    const roomChanged = activePlotId !== hiddenFor.current
     let windowsMoved = false
 
     for (const plot of buildingPlots) {
       // The open plot's room stands in for its building, so it neither lifts
       // nor shows windows. Touch has no hover, so nothing else lifts there.
-      const active = plot.id === selectedPlotId
+      const active = plot.id === activePlotId
       const raised = !active && !coarsePointer && plot.id === hoveredPlotId
       const target = raised ? UI.hoverLiftDistance : 0
       const current = lifts.current.get(plot.id) ?? 0
@@ -903,7 +903,7 @@ export function Buildings() {
       }
     }
 
-    hiddenFor.current = selectedPlotId
+    hiddenFor.current = activePlotId
     if (windowsMoved && windows) windows.instanceMatrix.needsUpdate = true
   })
 

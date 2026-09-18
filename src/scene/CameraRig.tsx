@@ -5,7 +5,7 @@ import { Spherical, Vector3 } from 'three'
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer, useIsMobile } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
-import { useEstate, type CameraMode } from '@/store/useEstate'
+import { useEstate, type CampusCamera } from '@/store/useEstate'
 import { CAMERA, FLIGHT, FOCUS, ROOM } from './constants'
 import { PAD_TOP, roomScale } from './room'
 
@@ -111,16 +111,29 @@ function viewOf(position: Vector3, target: Vector3): View {
   return { target: target.clone(), radius: scratch.radius, phi: scratch.phi, theta: scratch.theta }
 }
 
+// The scene fills the whole first screen, so on a touch screen a vertical
+// swipe must always stay the page's, or a visitor who has tapped the estate
+// can never scroll past it. Horizontal drags still orbit, and pinch still
+// zooms, because pan-y leaves both to the page's own handlers.
+function touchActionFor(hasInteracted: boolean, coarsePointer: boolean): string {
+  if (coarsePointer || !hasInteracted) return 'pan-y'
+  return 'none'
+}
+
+function campusCameraOf(view: View): CampusCamera {
+  return { theta: view.theta, phi: view.phi, radius: view.radius }
+}
+
 function poseOf(view: View): Pose {
   scratch.set(view.radius, view.phi, view.theta)
   return { position: new Vector3().setFromSpherical(scratch).add(view.target), target: view.target.clone() }
 }
 
-function moveSeconds(move: Move, mode: CameraMode): number {
+function moveSeconds(move: Move, atCampus: boolean): number {
   if (move === 'enter') return FLIGHT.enterSeconds
   if (move === 'exit') return FLIGHT.exitSeconds
   if (move === 'hop') return FLIGHT.hopSeconds
-  if (move === 'reset') return mode === 'overview' ? FLIGHT.exitSeconds : FLIGHT.shiftSeconds
+  if (move === 'reset') return atCampus ? FLIGHT.exitSeconds : FLIGHT.shiftSeconds
   return FLIGHT.shiftSeconds
 }
 
@@ -170,13 +183,15 @@ export function CameraRig() {
   const camera = useThree((state) => state.camera)
   const gl = useThree((state) => state.gl)
 
-  const mode = useEstate((state) => state.mode)
-  const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const level = useEstate((state) => state.level)
+  const atCampus = level === 'campus'
+  const setCampusCamera = useEstate((state) => state.setCampusCamera)
+  const activePlotId = useEstate((state) => state.activePlotId)
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
   const resetRequest = useEstate((state) => state.resetRequest)
   const paused = useEstate((state) => state.paused)
-  const hasEngaged = useEstate((state) => state.hasEngaged)
-  const engage = useEstate((state) => state.engage)
+  const hasInteracted = useEstate((state) => state.hasInteracted)
+  const engage = useEstate((state) => state.markInteracted)
 
   const prefersReducedMotion = usePrefersReducedMotion()
   const isMobile = useIsMobile()
@@ -187,8 +202,7 @@ export function CameraRig() {
   const [flying, setFlying] = useState(false)
   const flight = useRef<Flight | null>(null)
   // Where the visitor left the campus, restored when they come back to it.
-  const campusView = useRef<View | null>(null)
-  const previous = useRef<{ mode: CameraMode; plotId: string | null; reset: number } | null>(null)
+  const previous = useRef<{ atCampus: boolean; plotId: string | null; reset: number } | null>(null)
   const limits = useRef<Limits>({
     min: CAMERA.minDistance,
     max: CAMERA.maxDistance,
@@ -259,35 +273,39 @@ export function CameraRig() {
   // Child effects run first, so this overrides the touchAction OrbitControls
   // sets on connect. The per-frame guard below re-asserts it after a reconnect.
   useEffect(() => {
-    gl.domElement.style.touchAction = hasEngaged ? 'none' : 'pan-y'
-  }, [gl, hasEngaged])
+    gl.domElement.style.touchAction = touchActionFor(hasInteracted, coarsePointer)
+  }, [gl, hasInteracted, coarsePointer])
 
   useEffect(() => {
     const controls = controlsRef.current
     if (!controls) return
 
     const before = previous.current
-    previous.current = { mode, plotId: selectedPlotId, reset: resetRequest }
+    previous.current = { atCampus, plotId: activePlotId, reset: resetRequest }
 
     let move: Move = 'shift'
     if (before && before.reset !== resetRequest) move = 'reset'
-    else if (before?.mode === 'overview' && mode === 'focused') move = 'enter'
-    else if (before?.mode === 'focused' && mode === 'overview') move = 'exit'
-    else if (before && mode === 'focused' && before.plotId !== selectedPlotId) move = 'hop'
+    else if (before?.atCampus && !atCampus) move = 'enter'
+    else if (before && !before.atCampus && atCampus) move = 'exit'
+    else if (before && !atCampus && before.plotId !== activePlotId) move = 'hop'
 
     const inFlight = flight.current
 
     // Leaving the campus: remember the view, unless the camera is still on its
     // way back to one, in which case that destination is the view to keep.
     if (move === 'enter' && !inFlight?.toCampus) {
-      campusView.current = viewOf(camera.position, controls.target)
+      setCampusCamera(campusCameraOf(viewOf(camera.position, controls.target)))
     }
 
-    const plot = selectedPlotId ? (plots.find((p) => p.id === selectedPlotId) ?? null) : null
+    const plot = activePlotId ? (plots.find((p) => p.id === activePlotId) ?? null) : null
     let pose: Pose
-    if (mode === 'overview' || !plot) {
-      if (move === 'reset' || !campusView.current) campusView.current = viewOf(...overviewPoseParts())
-      pose = poseOf(campusView.current)
+    if (atCampus || !plot) {
+      let saved = useEstate.getState().campusCamera
+      if (move === 'reset' || !saved) {
+        saved = campusCameraOf(viewOf(...overviewPoseParts()))
+        setCampusCamera(saved)
+      }
+      pose = poseOf({ target: new Vector3(...CAMERA.homeTarget), ...saved })
     } else {
       pose = plotPose(plot, activeExhibitId !== null, isMobile)
     }
@@ -296,12 +314,12 @@ export function CameraRig() {
     // Applied before the next frame, so update() never clamps the new pose to
     // the previous level's distance range and snaps.
     limits.current = {
-      min: mode === 'overview' ? CAMERA.minDistance : radius * FOCUS.minDistanceFactor,
-      max: mode === 'overview' ? CAMERA.maxDistance : radius * FOCUS.maxDistanceFactor,
+      min: atCampus ? CAMERA.minDistance : radius * FOCUS.minDistanceFactor,
+      max: atCampus ? CAMERA.maxDistance : radius * FOCUS.maxDistanceFactor,
       // A cutaway only reads from the side its missing walls face, so inside a
       // room the orbit is held to an arc around that side.
       azimuth:
-        mode === 'focused'
+        !atCampus
           ? {
               center: Math.atan2(pose.position.x - pose.target.x, pose.position.z - pose.target.z),
               arc: FOCUS.roomAzimuthArc,
@@ -344,7 +362,7 @@ export function CameraRig() {
     // mid-air carries on from that point rather than snapping anywhere.
     const from = viewOf(camera.position, controls.target)
     const to = viewOf(pose.position, pose.target)
-    const seconds = moveSeconds(move, mode)
+    const seconds = moveSeconds(move, atCampus)
     const next: Flight = {
       from,
       to,
@@ -358,7 +376,7 @@ export function CameraRig() {
       residual: null,
       peak:
         move === 'hop' ? { radius: CAMERA.defaultDistance * FLIGHT.hopRadiusFactor, phi: FLIGHT.hopPhi } : null,
-      toCampus: mode === 'overview',
+      toCampus: atCampus,
     }
 
     // Interrupting a flight: carry on at the speed the camera already has.
@@ -393,7 +411,7 @@ export function CameraRig() {
     // switching away mid-transition can never strand the camera part-way.
     const timer = window.setTimeout(settle, (seconds + FLIGHT.settleGraceSeconds) * 1000)
     return () => window.clearTimeout(timer)
-  }, [mode, selectedPlotId, activeExhibitId, isMobile, prefersReducedMotion, resetRequest, camera, velocity])
+  }, [atCampus, activePlotId, activeExhibitId, isMobile, prefersReducedMotion, resetRequest, camera, velocity, setCampusCamera])
 
   useFrame((_, delta) => {
     const controls = controlsRef.current
@@ -401,7 +419,7 @@ export function CameraRig() {
 
     // OrbitControls rewrites touchAction whenever it connects or disposes, so
     // owning it per frame is the only way to keep the pre-engagement scroll.
-    const touchAction = hasEngaged ? 'none' : 'pan-y'
+    const touchAction = touchActionFor(hasInteracted, coarsePointer)
     if (gl.domElement.style.touchAction !== touchAction) {
       gl.domElement.style.touchAction = touchAction
     }
@@ -426,7 +444,7 @@ export function CameraRig() {
     }
 
     const idle = performance.now() / 1000 - lastInputAt.current >= CAMERA.idleDelay
-    if (mode === 'overview' && !prefersReducedMotion && !paused && idle) {
+    if (atCampus && !prefersReducedMotion && !paused && idle) {
       const step = Math.min(delta, CAMERA.maxFrameDelta) * CAMERA.idleDriftSpeed
       offset.copy(camera.position).sub(controls.target).applyAxisAngle(UP, step)
       camera.position.copy(controls.target).add(offset)
@@ -444,8 +462,8 @@ export function CameraRig() {
       enableDamping
       // Input is off during a flight, but controls keep updating so leftover
       // drag momentum decays instead of kicking in on arrival.
-      enableZoom={hasEngaged && !flying}
-      enableRotate={(coarsePointer ? hasEngaged : true) && !flying}
+      enableZoom={hasInteracted && !flying}
+      enableRotate={(coarsePointer ? hasInteracted : true) && !flying}
       dampingFactor={CAMERA.dampingFactor}
       rotateSpeed={CAMERA.rotateSpeed}
       zoomSpeed={CAMERA.zoomSpeed}

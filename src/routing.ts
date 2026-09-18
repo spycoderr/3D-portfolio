@@ -19,8 +19,8 @@ function parse(hash: string): Route {
 }
 
 function current(): Route {
-  const { selectedPlotId, activeExhibitId } = useEstate.getState()
-  return { plotId: selectedPlotId, exhibitId: selectedPlotId ? activeExhibitId : null }
+  const { activePlotId, activeExhibitId } = useEstate.getState()
+  return { plotId: activePlotId, exhibitId: activePlotId ? activeExhibitId : null }
 }
 
 function urlFor(route: Route): string {
@@ -32,13 +32,13 @@ function urlFor(route: Route): string {
 function apply(route: Route) {
   const state = useEstate.getState()
   if (!route.plotId) {
-    if (state.selectedPlotId) state.clearSelection()
+    if (state.activePlotId) state.backToCampus()
     return
   }
-  if (state.selectedPlotId !== route.plotId) state.selectPlot(route.plotId)
-  const { activeExhibitId, selectExhibit, clearExhibit } = useEstate.getState()
-  if (route.exhibitId && activeExhibitId !== route.exhibitId) selectExhibit(route.exhibitId)
-  if (!route.exhibitId && activeExhibitId) clearExhibit()
+  if (state.activePlotId !== route.plotId) state.goToPlot(route.plotId)
+  const { activeExhibitId, goToExhibit, backToInterior } = useEstate.getState()
+  if (route.exhibitId && activeExhibitId !== route.exhibitId) goToExhibit(route.exhibitId)
+  if (!route.exhibitId && activeExhibitId) backToInterior()
 }
 
 let started = false
@@ -66,7 +66,7 @@ export function startRouting(): void {
   useEstate.subscribe((state, previous) => {
     if (following) return
     const changed =
-      state.selectedPlotId !== previous.selectedPlotId || state.activeExhibitId !== previous.activeExhibitId
+      state.activePlotId !== previous.activePlotId || state.activeExhibitId !== previous.activeExhibitId
     if (!changed) return
     const url = urlFor(current())
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
