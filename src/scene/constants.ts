@@ -103,10 +103,36 @@ export const CAMERA = {
   dampingFactor: 0.06,
   idleDriftSpeed: 0.015,
   idleDelay: 4,
-  transitionDuration: 1.1,
   // A backgrounded tab resumes with one enormous delta; clamping it stops the
   // drift from lurching on the first frame back.
   maxFrameDelta: 0.05,
+} as const
+
+// Every camera move is a fixed-duration eased tween off elapsed time, one per
+// kind of move between levels.
+export const FLIGHT = {
+  // Campus into a room, and back out to where the visitor left the campus.
+  enterSeconds: 1.2,
+  exitSeconds: 1.2,
+  // Room to exhibit and back: the room slides aside for the panel.
+  shiftSeconds: 0.6,
+  // Room to a different room: up through campus altitude, then down.
+  hopSeconds: 1.8,
+  // Peak of a hop, as a fraction of the default campus distance, and how far
+  // toward looking straight down the camera tilts at that peak.
+  hopRadiusFactor: 0.55,
+  hopPhi: 0.72,
+  // Slack on the safety timer that lands a flight whose frames stopped coming.
+  settleGraceSeconds: 0.05,
+  // An interrupting flight inherits the camera's velocity, measured over at
+  // least the first span and forgotten if the last sample is older than the
+  // second.
+  // No flight ever takes the camera below floorHeight. Within cushion of it
+  // the descent eases off smoothly rather than stopping against a hard line.
+  floorHeight: 1.2,
+  floorCushion: 1.5,
+  velocitySampleSeconds: 0.008,
+  velocityStaleSeconds: 0.2,
 } as const
 
 // How the camera frames a selected plot. Every value is derived from the plot's
@@ -131,7 +157,8 @@ export const FOCUS = {
   roomAzimuthArc: 0.55,
 } as const
 
-// Lighting
+// Lighting. The directional light keeps its distance from the estate as it
+// moves, so the shadow frustum below still encloses the slab at dusk.
 export const LIGHTING = {
   hemiIntensity: 0.85,
   hemiSky: "#dcecf5",
@@ -149,6 +176,43 @@ export const LIGHTING = {
   shadowExtent: 24,
   shadowNear: 20,
   shadowFar: 80,
+} as const
+
+// The dusk toggle: one timeline, played forward into dusk and backward out of
+// it, so reversing midway simply turns round wherever it has got to. Times are
+// seconds from the start of the sequence.
+export const DUSK = {
+  duration: 1.4,
+  // Sky and slab cross-fade. Surfaces travel only this far toward their dusk
+  // colours, because the dimmed lights darken them as well; the sky, which no
+  // light touches, goes all the way.
+  colourEnd: 0.9,
+  surfaceFade: 0.55,
+  // The sun dims, warms and drops.
+  lightEnd: 1.0,
+  // Windows come on in steps of cascadeStep, nearest the camera first, each
+  // step fading in over windowFade.
+  cascadeStart: 0.3,
+  cascadeSpan: 0.72,
+  cascadeStep: 0.04,
+  windowFade: 0.14,
+  // Streetlights last.
+  lampStart: 1.02,
+  lampEnd: 1.4,
+
+  sunElevationDusk: 0.34,
+  sunColourDusk: '#ffb27a',
+  sunIntensityDusk: 0.8,
+  hemiSkyDusk: '#7486ad',
+  hemiGroundDusk: '#3a3830',
+  hemiIntensityDusk: 1.1,
+
+  windowGlow: 1.35,
+  lampGlow: 2.2,
+  poolRadius: 2.3,
+  poolOpacity: 0.32,
+  poolY: 0.09,
+  poolTextureSize: 128,
 } as const
 
 // The park inside the ring road, and the estate dressing around it.

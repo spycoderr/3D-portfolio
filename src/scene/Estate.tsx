@@ -2,13 +2,14 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { HoverLabel } from '@/components/ui/HoverLabel'
 import { PlotPanel } from '@/components/ui/PlotPanel'
+import { SceneControls } from '@/components/ui/SceneControls'
 import { PerfHud, type PerfSample } from './PerfHud'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useRenderGate } from '@/hooks/useRenderGate'
 import { useEstate } from '@/store/useEstate'
 import { CameraRig } from './CameraRig'
-import { CAMERA, COLORS, PERF, UI } from './constants'
+import { CAMERA, PERF, UI } from './constants'
 import { pixelRatioFor } from './deviceTier'
 import { Buildings } from './Building'
 import { Ground } from './Ground'
@@ -131,7 +132,6 @@ export function Estate() {
             position: CAMERA.homePosition,
           }}
         >
-          <color attach="background" args={[COLORS.sky]} />
           <Suspense fallback={null}>
             <Lighting />
             <Ground />
@@ -157,6 +157,7 @@ export function Estate() {
       {ready && !hasEngaged && <EngagementHint />}
       {ready && <HoverLabel container={container} />}
       {ready && <PlotPanel />}
+      {ready && <SceneControls />}
 
       {showPerf && perf && (
         <div className="pointer-events-none absolute left-3 top-3 border border-ink/20 bg-paper/95 px-3 py-2 font-mono text-[11px] leading-tight text-ink/80">

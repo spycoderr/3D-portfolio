@@ -10,6 +10,7 @@ import {
 } from 'three'
 import { palette } from '@/theme'
 import { SLAB } from './constants'
+import { trackColour, trackTint } from './dusk'
 import { slabShape } from './slab'
 
 type GroundResources = {
@@ -99,10 +100,15 @@ function getResources(): GroundResources {
   const shadow = new PlaneGeometry(SLAB.width * SLAB.shadowScale, SLAB.depth * SLAB.shadowScale)
   shadow.rotateX(-Math.PI / 2)
 
+  const topMaterial = new MeshLambertMaterial({ map: createGrassTexture() })
+  const edgeMaterial = new MeshLambertMaterial({ color: palette.slabEdge })
+  trackTint(topMaterial.color, 'slabTop')
+  trackColour(edgeMaterial.color, 'slabEdge')
+
   resources = {
     slab,
-    topMaterial: new MeshLambertMaterial({ map: createGrassTexture() }),
-    edgeMaterial: new MeshLambertMaterial({ color: palette.slabEdge }),
+    topMaterial,
+    edgeMaterial,
     shadow,
     shadowMaterial: new MeshBasicMaterial({
       map: createShadowTexture(),

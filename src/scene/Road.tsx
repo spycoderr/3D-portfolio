@@ -20,6 +20,13 @@ import {
   roadLength,
 } from './curves'
 import { gateAnchor } from './slab'
+import { trackColour } from './dusk'
+import type { PaletteToken } from '@/theme'
+
+function tracked(material: MeshLambertMaterial, token: PaletteToken): MeshLambertMaterial {
+  trackColour(material.color, token)
+  return material
+}
 
 // A closed ribbon swept along the road curve: sample the centreline, step out
 // to both edges, then stitch the pairs together and wrap the seam.
@@ -207,9 +214,9 @@ function getResources(): RoadResources {
     driveways: buildDriveways(),
     dash,
     stripe,
-    roadMaterial: new MeshLambertMaterial({ color: COLORS.road }),
-    kerbMaterial: new MeshLambertMaterial({ color: COLORS.kerb }),
-    dashMaterial: new MeshLambertMaterial({ color: COLORS.roadMark }),
+    roadMaterial: tracked(new MeshLambertMaterial({ color: COLORS.road }), 'road'),
+    kerbMaterial: tracked(new MeshLambertMaterial({ color: COLORS.kerb }), 'kerb'),
+    dashMaterial: tracked(new MeshLambertMaterial({ color: COLORS.roadMark }), 'roadMark'),
     dashCount: Math.floor(roadLength / (ROAD.dashLength + ROAD.dashGap)),
     spurs: spurPoints(),
   }

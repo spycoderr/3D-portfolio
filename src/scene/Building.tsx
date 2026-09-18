@@ -16,6 +16,7 @@ import {
   CanvasTexture,
   CylinderGeometry,
   Euler,
+  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
   Color,
@@ -30,8 +31,9 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { useEstate } from '@/store/useEstate'
-import { palette } from '@/theme'
-import { BUILDING, BUILDING_PROPS, CAMERA, COLORS, UI } from './constants'
+import { palette, themes } from '@/theme'
+import { BUILDING, BUILDING_PROPS, CAMERA, COLORS, DUSK, UI } from './constants'
+import { cascadeDelay, dusk, smooth, trackColour } from './dusk'
 import { boxRaycast } from './raycast'
 import { PAD_TOP } from './room'
 
@@ -49,6 +51,8 @@ function material(colour: string): MeshLambertMaterial {
 
 export const padMaterial = material(COLORS.pad)
 export const padHighlightMaterial = material(COLORS.padHighlight)
+trackColour(padMaterial.color, 'pad')
+trackColour(padHighlightMaterial.color, 'padHighlight')
 
 function box(w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
   const geometry = new BoxGeometry(w, h, d)
@@ -520,7 +524,27 @@ function getWindowGeometry(): BufferGeometry {
   return windowGeometry
 }
 
-const windowMaterials = [material(COLORS.windowDark), material(COLORS.kerb)]
+// Glass is its own material, never the shared cache entry for its colour,
+// because at dusk it glows: each window carries a lit level from 0 to 1 that
+// turns the pane from dark glazing into the warm emissive of a lit room.
+const litUniform = { value: new Color(themes.dusk.windowLit).multiplyScalar(DUSK.windowGlow) }
+const glassMaterial = new MeshLambertMaterial({ color: COLORS.windowDark })
+glassMaterial.onBeforeCompile = (shader) => {
+  shader.uniforms.uLitColour = litUniform
+  shader.vertexShader = `attribute float aLit;\nvarying float vLit;\n${shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    '#include <begin_vertex>\nvLit = aLit;',
+  )}`
+  shader.fragmentShader = `uniform vec3 uLitColour;\nvarying float vLit;\n${shader.fragmentShader.replace(
+    '#include <emissivemap_fragment>',
+    `#include <emissivemap_fragment>
+    diffuseColor.rgb *= 1.0 - vLit;
+    totalEmissiveRadiance += uLitColour * vLit;`,
+  )}`
+}
+glassMaterial.customProgramCacheKey = () => 'window-glass'
+
+const windowMaterials = [glassMaterial, material(COLORS.kerb)]
 
 // Stands in for a raycast when a shell must not catch the pointer at all.
 function noRaycast() {}
@@ -617,6 +641,47 @@ const Windows = forwardRef<InstancedMesh, { matrices: Matrix4[] }>(function Wind
   const meshRef = useRef<InstancedMesh>(null)
   useImperativeHandle(ref, () => meshRef.current!, [])
   const geometry = getWindowGeometry()
+
+  const lit = useMemo(() => new InstancedBufferAttribute(new Float32Array(matrices.length), 1), [matrices])
+  // Attached in an effect rather than inside the memo: a memo may run twice,
+  // and the attribute on the geometry must be the one this frame loop writes.
+  useLayoutEffect(() => {
+    geometry.setAttribute('aLit', lit)
+  }, [geometry, lit])
+  const delays = useMemo(() => new Float32Array(matrices.length), [matrices])
+  const cascade = useRef({ epoch: -1, time: -1 })
+  useLayoutEffect(() => {
+    cascade.current.time = -1
+  }, [lit])
+
+  useFrame(() => {
+    const state = cascade.current
+    if (state.epoch !== dusk.epoch) {
+      // Ordered from where the camera stood at the toggle, nearest first.
+      const distances = matrices.map((matrix) =>
+        Math.hypot(
+          matrix.elements[12] - dusk.origin.x,
+          matrix.elements[13] - dusk.origin.y,
+          matrix.elements[14] - dusk.origin.z,
+        ),
+      )
+      const nearest = Math.min(...distances)
+      const farthest = Math.max(...distances)
+      distances.forEach((distance, index) => {
+        delays[index] = cascadeDelay(distance, nearest, farthest)
+      })
+      state.epoch = dusk.epoch
+      state.time = -1
+    }
+    if (state.time === dusk.time) return
+    state.time = dusk.time
+
+    const start = DUSK.cascadeStart
+    for (let index = 0; index < delays.length; index += 1) {
+      lit.setX(index, smooth((dusk.time - start - delays[index]) / DUSK.windowFade))
+    }
+    lit.needsUpdate = true
+  })
 
   useLayoutEffect(() => {
     const mesh = meshRef.current

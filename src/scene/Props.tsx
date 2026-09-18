@@ -1,6 +1,9 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import {
+  AdditiveBlending,
   BoxGeometry,
+  CanvasTexture,
   BufferAttribute,
   BufferGeometry,
   CircleGeometry,
@@ -8,19 +11,24 @@ import {
   ConeGeometry,
   CylinderGeometry,
   InstancedMesh,
+  type Material,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   Object3D,
+  PlaneGeometry,
   RingGeometry,
+  SRGBColorSpace,
   TorusGeometry,
   Vector2,
   Vector3,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { plots } from '@/data/plots'
-import { palette } from '@/theme'
-import { BOUNDARY, COLORS, COMMUNITY, ESTATE, PARK, ROAD, SLAB } from './constants'
+import { palette, themes } from '@/theme'
+import { BOUNDARY, COLORS, COMMUNITY, DUSK, ESTATE, PARK, ROAD, SLAB } from './constants'
 import { getLanePoint, getPointAt, roadJunctions, roadLength, wrapU } from './curves'
 import { gateAnchor, gateT, isOnSlab, slabOutline } from './slab'
+import { stage, trackColour } from './dusk'
 
 // One material for every piece of static dressing. Colour rides on the vertices
 // instead, so nine separate props collapse into a single draw call.
@@ -29,8 +37,9 @@ const dressingMaterial = new MeshLambertMaterial({ vertexColors: true })
 const materials = {
   trunk: new MeshLambertMaterial({ color: COLORS.trunk }),
   foliage: new MeshLambertMaterial({ color: COLORS.foliage }),
-  ink: new MeshLambertMaterial({ color: COLORS.ink }),
 }
+trackColour(materials.trunk.color, 'trunk')
+trackColour(materials.foliage.color, 'foliage')
 
 function box(w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
   const geometry = new BoxGeometry(w, h, d)
@@ -52,6 +61,63 @@ function tint(geometry: BufferGeometry, colour: string): BufferGeometry {
   geometry.setAttribute('color', new BufferAttribute(colours, 3))
   return geometry
 }
+
+function glowFlag(geometry: BufferGeometry, value: number) {
+  const count = geometry.attributes.position.count
+  geometry.setAttribute('aGlow', new BufferAttribute(new Float32Array(count).fill(value), 1))
+}
+
+// Streetlights are ink by day. At dusk their heads glow warm, which is a term
+// added in the shader, so the lamps stay one instanced draw call.
+const lampUniform = { value: 0 }
+const lampMaterial = new MeshLambertMaterial({ color: COLORS.ink })
+lampMaterial.onBeforeCompile = (shader) => {
+  shader.uniforms.uLamp = lampUniform
+  shader.uniforms.uLampColour = {
+    value: new Color(themes.dusk.windowLit).multiplyScalar(DUSK.lampGlow),
+  }
+  shader.vertexShader = `attribute float aGlow;\nvarying float vGlow;\n${shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    '#include <begin_vertex>\nvGlow = aGlow;',
+  )}`
+  shader.fragmentShader = `uniform float uLamp;\nuniform vec3 uLampColour;\nvarying float vGlow;\n${shader.fragmentShader.replace(
+    '#include <emissivemap_fragment>',
+    `#include <emissivemap_fragment>
+    totalEmissiveRadiance += uLampColour * vGlow * uLamp;`,
+  )}`
+}
+lampMaterial.customProgramCacheKey = () => 'street-lamp'
+
+// The pool each lamp throws on the ground: a soft warm disc, added over what
+// is below it. Stands in for bloom, which the frame budget can't afford.
+function createPoolTexture(): CanvasTexture {
+  const size = DUSK.poolTextureSize
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')!
+  const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(0.35, 'rgba(255,255,255,0.55)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, size, size)
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  return texture
+}
+
+const poolMaterial = new MeshBasicMaterial({
+  color: themes.dusk.windowLit,
+  map: createPoolTexture(),
+  transparent: true,
+  opacity: 0,
+  blending: AdditiveBlending,
+  depthWrite: false,
+})
+
+const poolGeometry = new PlaneGeometry(DUSK.poolRadius * 2, DUSK.poolRadius * 2)
+poolGeometry.rotateX(-Math.PI / 2)
 
 // Small deterministic PRNG: the estate must lay out identically on every load.
 function mulberry32(seed: number) {
@@ -277,6 +343,9 @@ function getResources(): EstateResources {
   const pole = new CylinderGeometry(0.045, 0.055, ESTATE.lampHeight, 8)
   pole.translate(0, ESTATE.lampHeight / 2, 0)
   const head = box(0.26, 0.12, 0.26, 0, ESTATE.lampHeight + 0.06, 0)
+  // Which vertices glow at dusk: the head does, the pole never does.
+  glowFlag(pole, 0)
+  glowFlag(head, 1)
   const lamp = mergeGeometries([pole, head], false)
   pole.dispose()
   head.dispose()
@@ -364,6 +433,28 @@ export function Props() {
     [parts.lamps],
   )
 
+  const poolTransform = useMemo(
+    () => (dummy: Object3D, index: number) => {
+      lampTransform(dummy, index)
+      dummy.position.y = DUSK.poolY
+    },
+    [lampTransform],
+  )
+
+  const poolsRef = useRef<InstancedMesh>(null)
+  const lampLevel = useRef(-1)
+
+  // Lamps come on last in the dusk sequence. By day the pools are not drawn
+  // at all, so they cost the daytime scene nothing.
+  useFrame(() => {
+    const level = stage(DUSK.lampStart, DUSK.lampEnd)
+    if (level === lampLevel.current) return
+    lampLevel.current = level
+    lampUniform.value = level
+    poolMaterial.opacity = DUSK.poolOpacity * level
+    if (poolsRef.current) poolsRef.current.visible = level > 0
+  })
+
   const benchTransform = useMemo(
     () => (dummy: Object3D, index: number) => {
       const angle = (index / PARK.benchCount) * Math.PI * 2 + 0.4
@@ -385,9 +476,17 @@ export function Props() {
       <TreeInstances trees={parts.trees} trunk={parts.trunk} foliage={parts.foliage} />
       <CountedInstances
         geometry={parts.lamp}
-        material={materials.ink}
+        material={lampMaterial}
         count={ESTATE.lampCount}
         transform={lampTransform}
+      />
+      <CountedInstances
+        ref={poolsRef}
+        geometry={poolGeometry}
+        material={poolMaterial}
+        count={ESTATE.lampCount}
+        transform={poolTransform}
+        castShadow={false}
       />
       <CountedInstances
         geometry={parts.bench}
@@ -399,18 +498,20 @@ export function Props() {
   )
 }
 
-function CountedInstances({
-  geometry,
-  material,
-  count,
-  transform,
-}: {
+type CountedInstancesProps = {
   geometry: BufferGeometry
-  material: MeshLambertMaterial
+  material: Material
   count: number
   transform: (dummy: Object3D, index: number) => void
-}) {
+  castShadow?: boolean
+}
+
+const CountedInstances = forwardRef<InstancedMesh, CountedInstancesProps>(function CountedInstances(
+  { geometry, material, count, transform, castShadow = true },
+  ref,
+) {
   const meshRef = useRef<InstancedMesh>(null)
+  useImperativeHandle(ref, () => meshRef.current!, [])
 
   useLayoutEffect(() => {
     const mesh = meshRef.current
@@ -430,11 +531,11 @@ function CountedInstances({
     <instancedMesh
       ref={meshRef}
       args={[geometry, material, count]}
-      castShadow
+      castShadow={castShadow}
       receiveShadow={false}
     />
   )
-}
+})
 
 function TreeInstances({
   trees,

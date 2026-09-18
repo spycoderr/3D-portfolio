@@ -17,8 +17,9 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { plots, type Exhibit, type Plot } from '@/data/plots'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useEstate } from '@/store/useEstate'
-import { ACCENT, palette } from '@/theme'
-import { ROOM, UI } from './constants'
+import { ACCENT, palette, themes } from '@/theme'
+import { DUSK, ROOM, UI } from './constants'
+import { stage } from './dusk'
 import { kitEntry, paintSurface, UNTEXTURED, type Mount } from './exhibitKit'
 import { boxRaycast } from './raycast'
 import { PAD_TOP, roomScale } from './room'
@@ -38,7 +39,32 @@ const DESK_Z = BACK_Z + ROOM.deskDepth / 2 + 0.03
 // A room has room for this many exhibits; the atlas keeps one cell spare.
 const MAX_EXHIBITS = 3
 
+// The shell's strip light comes on with the windows at dusk. It is a glow
+// term in the shader, flagged per vertex, so the shell stays one draw call.
+const roomLight = { value: 0 }
 const shellMaterial = new MeshLambertMaterial({ vertexColors: true })
+shellMaterial.onBeforeCompile = (shader) => {
+  shader.uniforms.uRoomLight = roomLight
+  shader.uniforms.uRoomLightColour = {
+    value: new Color(themes.dusk.windowLit).multiplyScalar(DUSK.windowGlow),
+  }
+  shader.vertexShader = `attribute float aGlow;\nvarying float vGlow;\n${shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    '#include <begin_vertex>\nvGlow = aGlow;',
+  )}`
+  shader.fragmentShader = `uniform float uRoomLight;\nuniform vec3 uRoomLightColour;\nvarying float vGlow;\n${shader.fragmentShader.replace(
+    '#include <emissivemap_fragment>',
+    `#include <emissivemap_fragment>
+    totalEmissiveRadiance += uRoomLightColour * vGlow * uRoomLight;`,
+  )}`
+}
+shellMaterial.customProgramCacheKey = () => 'room-shell'
+
+function glow(geometry: BufferGeometry, value: number): BufferGeometry {
+  const count = geometry.attributes.position.count
+  geometry.setAttribute('aGlow', new BufferAttribute(new Float32Array(count).fill(value), 1))
+  return geometry
+}
 
 function box(colour: string, w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
   const geometry = new BoxGeometry(w, h, d)
@@ -156,9 +182,10 @@ function buildShell(plot: Plot): BufferGeometry {
 
   // Strip light along the top of the back wall. It takes the window colour,
   // so it is already the right thing to light up when dusk comes.
-  parts.push(box(palette.windowLit, ROOM.stripLightWidth, 0.05, 0.07, 0.1, H - 0.14, BACK_Z + 0.035))
+  parts.push(glow(box(palette.windowLit, ROOM.stripLightWidth, 0.05, 0.07, 0.1, H - 0.14, BACK_Z + 0.035), 1))
   parts.push(box(palette.charcoal, ROOM.stripLightWidth + 0.06, 0.02, 0.09, 0.1, H - 0.105, BACK_Z + 0.045))
 
+  for (const part of parts) if (!part.attributes.aGlow) glow(part, 0)
   return merge(parts)
 }
 
@@ -391,6 +418,10 @@ function ExhibitMesh({ built }: { built: BuiltExhibit }) {
 function Room({ plot }: { plot: Plot }) {
   const built = useMemo(() => ({ shell: buildShell(plot), exhibits: buildExhibits(plot) }), [plot])
   const clearExhibit = useEstate((state) => state.clearExhibit)
+
+  useFrame(() => {
+    roomLight.value = stage(DUSK.cascadeStart, DUSK.cascadeStart + DUSK.cascadeSpan + DUSK.windowFade)
+  })
 
   // The atlas is kept for the next visit; everything else goes.
   useEffect(

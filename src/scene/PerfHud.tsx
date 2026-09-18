@@ -24,7 +24,15 @@ declare global {
     __bench?: (frames?: number) => BenchResult
     // Controls are exposed so views can be framed exactly when checking a change,
     // rather than by dragging until the right thing happens to be in shot.
-    __three?: { gl: WebGLRenderer; scene: Scene; camera: Camera; controls: unknown }
+    // advance steps one full frame, useFrame included, for when the pane is
+    // in the background and requestAnimationFrame is throttled to 1fps.
+    __three?: {
+      gl: WebGLRenderer
+      scene: Scene
+      camera: Camera
+      controls: unknown
+      advance: (timestamp: number) => void
+    }
   }
 }
 
@@ -33,6 +41,7 @@ export function PerfHud({ onSample }: { onSample: (sample: PerfSample) => void }
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
   const controls = useThree((state) => state.controls)
+  const advance = useThree((state) => state.advance)
   const samples = useRef<number[]>([])
   const last = useRef(performance.now())
   const reported = useRef(performance.now())
@@ -41,7 +50,7 @@ export function PerfHud({ onSample }: { onSample: (sample: PerfSample) => void }
   // deltas useless for judging cost. Exposing the renderer lets a frame be timed
   // synchronously instead, on demand.
   useEffect(() => {
-    window.__three = { gl, scene, camera, controls }
+    window.__three = { gl, scene, camera, controls, advance }
     window.__bench = (frames = 60) => {
       const context = gl.getContext()
       gl.render(scene, camera)
@@ -66,7 +75,7 @@ export function PerfHud({ onSample }: { onSample: (sample: PerfSample) => void }
       delete window.__bench
       delete window.__three
     }
-  }, [gl, scene, camera, controls])
+  }, [gl, scene, camera, controls, advance])
 
   useFrame(() => {
     const now = performance.now()

@@ -5,26 +5,40 @@ import { Spherical, Vector3 } from 'three'
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer, useIsMobile } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
-import { useEstate } from '@/store/useEstate'
-import { CAMERA, FOCUS, ROOM } from './constants'
+import { useEstate, type CameraMode } from '@/store/useEstate'
+import { CAMERA, FLIGHT, FOCUS, ROOM } from './constants'
 import { PAD_TOP, roomScale } from './room'
 
 type Controls = ComponentRef<typeof OrbitControls>
 
 type Pose = { position: Vector3; target: Vector3 }
 
-// Interpolating in spherical space keeps the camera on a dome around the model,
-// so it swings around the estate instead of cutting a straight line through it.
-type Transition = {
-  fromTarget: Vector3
-  toTarget: Vector3
-  fromRadius: number
-  fromPhi: number
-  fromTheta: number
-  toRadius: number
-  toPhi: number
+// A camera placement as the flights think of it: a point looked at, and where
+// the camera sits on a sphere round it. Interpolating these keeps the camera
+// swinging round the model instead of cutting a straight line through it.
+type View = { target: Vector3; radius: number; phi: number; theta: number }
+
+// The five moves between levels, plus reframing the current one.
+type Move = 'enter' | 'exit' | 'shift' | 'hop' | 'reset'
+
+type Flight = {
+  from: View
+  to: View
   deltaTheta: number
+  seconds: number
   startedAt: number
+  // Speed the flight's progress starts at, in path lengths per flight. Zero
+  // from a standstill; an interrupting flight inherits the camera's motion.
+  startSpeed: number
+  // Whatever part of the camera's motion the new path doesn't carry. It is
+  // added as an offset that starts at that velocity and dies away to nothing
+  // by arrival, so nothing ever stops dead or kicks off from rest.
+  residual: { camera: Vector3; target: Vector3 } | null
+  // A hop between rooms rises to this and comes back down.
+  peak: { radius: number; phi: number } | null
+  // Whether this flight ends on the campus, so leaving again mid-flight keeps
+  // the campus view it was heading for rather than wherever it got to.
+  toCampus: boolean
 }
 
 type Limits = {
@@ -39,6 +53,50 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
 
+// Cubic Hermite from 0 to 1 that leaves at the given speed and arrives at
+// rest. With a starting speed of zero it is the plain ease used from rest.
+function progress(t: number, startSpeed: number): number {
+  if (startSpeed === 0) return easeInOutCubic(t)
+  const t2 = t * t
+  const t3 = t2 * t
+  return (t3 - 2 * t2 + t) * startSpeed + (-2 * t3 + 3 * t2)
+}
+
+// The Hermite basis that leaves at unit slope and returns to zero at rest:
+// the shape a carried-over velocity decays along.
+function fade(t: number): number {
+  return t * t * t - 2 * t * t + t
+}
+
+// Progress can't start faster than this, however fast the camera was going;
+// any extra goes into the residual, which dies away instead of overshooting.
+const MAX_START_SPEED = 3
+
+// Above floor + cushion a height passes through untouched; below it, it is
+// squeezed exponentially toward the floor, meeting the untouched line with the
+// same slope so the camera's motion has no corner in it.
+function cushion(y: number): number {
+  const knee = FLIGHT.floorHeight + FLIGHT.floorCushion
+  if (y >= knee) return y
+  return FLIGHT.floorHeight + FLIGHT.floorCushion * Math.exp((y - knee) / FLIGHT.floorCushion)
+}
+
+// Places the camera and look-at point at progress k along a flight's path.
+function place(flight: Flight, k: number, target: Vector3, position: Vector3, spherical: Spherical) {
+  const { from, to } = flight
+  target.lerpVectors(from.target, to.target, k)
+  let radius = from.radius + (to.radius - from.radius) * k
+  let phi = from.phi + (to.phi - from.phi) * k
+  if (flight.peak) {
+    const rise = Math.sin(Math.PI * k)
+    radius += (flight.peak.radius - radius) * rise
+    phi += (flight.peak.phi - phi) * rise
+  }
+  spherical.set(radius, phi, from.theta + flight.deltaTheta * k)
+  spherical.makeSafe()
+  position.setFromSpherical(spherical).add(target)
+}
+
 function shortestAngle(from: number, to: number): number {
   let delta = (to - from) % (Math.PI * 2)
   if (delta > Math.PI) delta -= Math.PI * 2
@@ -46,11 +104,28 @@ function shortestAngle(from: number, to: number): number {
   return delta
 }
 
-function overviewPose(): Pose {
-  return {
-    position: new Vector3(...CAMERA.homePosition),
-    target: new Vector3(...CAMERA.homeTarget),
-  }
+const scratch = new Spherical()
+
+function viewOf(position: Vector3, target: Vector3): View {
+  scratch.setFromVector3(position.clone().sub(target))
+  return { target: target.clone(), radius: scratch.radius, phi: scratch.phi, theta: scratch.theta }
+}
+
+function poseOf(view: View): Pose {
+  scratch.set(view.radius, view.phi, view.theta)
+  return { position: new Vector3().setFromSpherical(scratch).add(view.target), target: view.target.clone() }
+}
+
+function moveSeconds(move: Move, mode: CameraMode): number {
+  if (move === 'enter') return FLIGHT.enterSeconds
+  if (move === 'exit') return FLIGHT.exitSeconds
+  if (move === 'hop') return FLIGHT.hopSeconds
+  if (move === 'reset') return mode === 'overview' ? FLIGHT.exitSeconds : FLIGHT.shiftSeconds
+  return FLIGHT.shiftSeconds
+}
+
+function overviewPoseParts(): [Vector3, Vector3] {
+  return [new Vector3(...CAMERA.homePosition), new Vector3(...CAMERA.homeTarget)]
 }
 
 // Frames the plot's room from the quarter its two missing walls face. Every
@@ -98,6 +173,7 @@ export function CameraRig() {
   const mode = useEstate((state) => state.mode)
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
+  const resetRequest = useEstate((state) => state.resetRequest)
   const hasEngaged = useEstate((state) => state.hasEngaged)
   const engage = useEstate((state) => state.engage)
 
@@ -108,17 +184,45 @@ export function CameraRig() {
   // Drives the control gating as a prop rather than a per-frame write, so the
   // gate is correct from the moment React renders, not from the first frame.
   const [flying, setFlying] = useState(false)
-  const transition = useRef<Transition | null>(null)
+  const flight = useRef<Flight | null>(null)
+  // Where the visitor left the campus, restored when they come back to it.
+  const campusView = useRef<View | null>(null)
+  const previous = useRef<{ mode: CameraMode; plotId: string | null; reset: number } | null>(null)
   const limits = useRef<Limits>({
     min: CAMERA.minDistance,
     max: CAMERA.maxDistance,
     azimuth: null,
   })
   const lastInputAt = useRef(performance.now() / 1000)
-  const initialised = useRef(false)
+  const lastFrameAt = useRef(performance.now() / 1000)
 
   const offset = useMemo(() => new Vector3(), [])
   const spherical = useMemo(() => new Spherical(), [])
+
+  // The camera's motion as of the last frame, which an interrupting flight
+  // picks up from so that it never starts from rest in mid-air.
+  const velocity = useMemo(() => ({ camera: new Vector3(), target: new Vector3() }), [])
+  const lastSeen = useMemo(() => ({ camera: new Vector3(), target: new Vector3(), at: -1 }), [])
+  // Measured over a minimum span of real time: two frames that land almost
+  // together would otherwise read as the camera standing still.
+  const recordMotion = () => {
+    const controls = controlsRef.current
+    if (!controls) return
+    const now = performance.now() / 1000
+    const span = now - lastSeen.at
+    if (lastSeen.at >= 0 && span < FLIGHT.velocitySampleSeconds) return
+    if (lastSeen.at >= 0 && span < FLIGHT.velocityStaleSeconds) {
+      velocity.camera.subVectors(camera.position, lastSeen.camera).divideScalar(span)
+      velocity.target.subVectors(controls.target, lastSeen.target).divideScalar(span)
+    } else {
+      // After a long gap nothing is known about how the camera was moving.
+      velocity.camera.set(0, 0, 0)
+      velocity.target.set(0, 0, 0)
+    }
+    lastSeen.camera.copy(camera.position)
+    lastSeen.target.copy(controls.target)
+    lastSeen.at = now
+  }
 
   // A pointer press counts as engaging on desktop, where dragging can never be
   // a page scroll. Touch has to engage through the affordance instead.
@@ -159,12 +263,35 @@ export function CameraRig() {
     const controls = controlsRef.current
     if (!controls) return
 
+    const before = previous.current
+    previous.current = { mode, plotId: selectedPlotId, reset: resetRequest }
+
+    let move: Move = 'shift'
+    if (before && before.reset !== resetRequest) move = 'reset'
+    else if (before?.mode === 'overview' && mode === 'focused') move = 'enter'
+    else if (before?.mode === 'focused' && mode === 'overview') move = 'exit'
+    else if (before && mode === 'focused' && before.plotId !== selectedPlotId) move = 'hop'
+
+    const inFlight = flight.current
+
+    // Leaving the campus: remember the view, unless the camera is still on its
+    // way back to one, in which case that destination is the view to keep.
+    if (move === 'enter' && !inFlight?.toCampus) {
+      campusView.current = viewOf(camera.position, controls.target)
+    }
+
     const plot = selectedPlotId ? (plots.find((p) => p.id === selectedPlotId) ?? null) : null
-    const pose = mode === 'overview' || !plot ? overviewPose() : plotPose(plot, activeExhibitId !== null, isMobile)
+    let pose: Pose
+    if (mode === 'overview' || !plot) {
+      if (move === 'reset' || !campusView.current) campusView.current = viewOf(...overviewPoseParts())
+      pose = poseOf(campusView.current)
+    } else {
+      pose = plotPose(plot, activeExhibitId !== null, isMobile)
+    }
     const radius = pose.position.distanceTo(pose.target)
 
     // Applied before the next frame, so update() never clamps the new pose to
-    // the previous mode's distance range and snaps.
+    // the previous level's distance range and snaps.
     limits.current = {
       min: mode === 'overview' ? CAMERA.minDistance : radius * FOCUS.minDistanceFactor,
       max: mode === 'overview' ? CAMERA.maxDistance : radius * FOCUS.maxDistanceFactor,
@@ -173,10 +300,7 @@ export function CameraRig() {
       azimuth:
         mode === 'focused'
           ? {
-              center: Math.atan2(
-                pose.position.x - pose.target.x,
-                pose.position.z - pose.target.z,
-              ),
+              center: Math.atan2(pose.position.x - pose.target.x, pose.position.z - pose.target.z),
               arc: FOCUS.roomAzimuthArc,
             }
           : null,
@@ -191,53 +315,82 @@ export function CameraRig() {
       : Infinity
 
     const settle = () => {
-      transition.current = null
+      flight.current = null
       camera.position.copy(pose.position)
       controls.target.copy(pose.target)
       camera.lookAt(pose.target)
       controls.update()
+      setFlying(false)
+      // Arriving is not the visitor walking away: the idle drift waits its
+      // full delay from here, rather than pulling off the view straight away.
+      lastInputAt.current = performance.now() / 1000
     }
 
     // Crossing the panel breakpoint re-runs this while already parked, so a
-    // pose that matches settles instead of burning 1.1s going nowhere.
+    // pose that matches settles instead of flying nowhere.
     const alreadyThere =
       camera.position.distanceToSquared(pose.position) < 1e-4 &&
       controls.target.distanceToSquared(pose.target) < 1e-4
 
-    if (!initialised.current || prefersReducedMotion || alreadyThere) {
-      initialised.current = true
+    if (!before || prefersReducedMotion || alreadyThere) {
       settle()
-      setFlying(false)
       return
     }
 
-    // Starting from where the camera actually is means interrupting a flight
-    // mid-air continues from that point rather than snapping to a stored origin.
-    const fromTarget = controls.target.clone()
-    const from = new Spherical().setFromVector3(camera.position.clone().sub(fromTarget))
-    const to = new Spherical().setFromVector3(pose.position.clone().sub(pose.target))
-
-    transition.current = {
-      fromTarget,
-      toTarget: pose.target,
-      fromRadius: from.radius,
-      fromPhi: from.phi,
-      fromTheta: from.theta,
-      toRadius: to.radius,
-      toPhi: to.phi,
+    // Starting from where the camera actually is means a flight interrupted
+    // mid-air carries on from that point rather than snapping anywhere.
+    const from = viewOf(camera.position, controls.target)
+    const to = viewOf(pose.position, pose.target)
+    const seconds = moveSeconds(move, mode)
+    const next: Flight = {
+      from,
+      to,
       deltaTheta: shortestAngle(from.theta, to.theta),
-      startedAt: performance.now() / 1000,
+      seconds,
+      // The flight starts from where the camera was drawn last, so its clock
+      // starts then too. Otherwise the first frame of an interrupting flight
+      // covers only the sliver since this effect ran, and the camera hitches.
+      startedAt: Math.max(lastFrameAt.current, performance.now() / 1000 - CAMERA.maxFrameDelta),
+      startSpeed: 0,
+      residual: null,
+      peak:
+        move === 'hop' ? { radius: CAMERA.defaultDistance * FLIGHT.hopRadiusFactor, phi: FLIGHT.hopPhi } : null,
+      toCampus: mode === 'overview',
     }
+
+    // Interrupting a flight: carry on at the speed the camera already has.
+    // The part of its velocity that lies along the new path becomes the new
+    // path's starting speed; the rest fades out over the flight.
+    if (inFlight) {
+      const epsilon = 1e-3
+      const startTarget = new Vector3()
+      const startPosition = new Vector3()
+      const aheadTarget = new Vector3()
+      const aheadPosition = new Vector3()
+      const probe = new Spherical()
+      place(next, 0, startTarget, startPosition, probe)
+      place(next, epsilon, aheadTarget, aheadPosition, probe)
+      // How the path moves per unit of progress, at its start.
+      const pathSlope = aheadPosition.sub(startPosition).divideScalar(epsilon)
+      const targetSlope = aheadTarget.sub(startTarget).divideScalar(epsilon)
+
+      const lengthSq = pathSlope.lengthSq()
+      const along = lengthSq > 1e-8 ? (velocity.camera.dot(pathSlope) / lengthSq) * seconds : 0
+      next.startSpeed = Math.min(Math.max(along, 0), MAX_START_SPEED)
+      const carried = next.startSpeed / seconds
+      next.residual = {
+        camera: velocity.camera.clone().addScaledVector(pathSlope, -carried),
+        target: velocity.target.clone().addScaledVector(targetSlope, -carried),
+      }
+    }
+    flight.current = next
     setFlying(true)
 
     // Guarantees arrival even if frames stop being delivered mid-flight, so
     // switching away mid-transition can never strand the camera part-way.
-    const timer = window.setTimeout(() => {
-      settle()
-      setFlying(false)
-    }, CAMERA.transitionDuration * 1000)
+    const timer = window.setTimeout(settle, (seconds + FLIGHT.settleGraceSeconds) * 1000)
     return () => window.clearTimeout(timer)
-  }, [mode, selectedPlotId, activeExhibitId, isMobile, prefersReducedMotion, camera])
+  }, [mode, selectedPlotId, activeExhibitId, isMobile, prefersReducedMotion, resetRequest, camera, velocity])
 
   useFrame((_, delta) => {
     const controls = controlsRef.current
@@ -250,34 +403,34 @@ export function CameraRig() {
       gl.domElement.style.touchAction = touchAction
     }
 
-    const flight = transition.current
-
-    if (flight) {
-      const elapsed = performance.now() / 1000 - flight.startedAt
-      const t = Math.min(elapsed / CAMERA.transitionDuration, 1)
-      const k = easeInOutCubic(t)
-
-      controls.target.lerpVectors(flight.fromTarget, flight.toTarget, k)
-      spherical.radius = flight.fromRadius + (flight.toRadius - flight.fromRadius) * k
-      spherical.phi = flight.fromPhi + (flight.toPhi - flight.fromPhi) * k
-      spherical.theta = flight.fromTheta + flight.deltaTheta * k
-      spherical.makeSafe()
-
-      offset.setFromSpherical(spherical)
-      camera.position.copy(controls.target).add(offset)
+    const current = flight.current
+    if (current) {
+      const t = Math.min((performance.now() / 1000 - current.startedAt) / current.seconds, 1)
+      place(current, progress(t, current.startSpeed), controls.target, camera.position, spherical)
+      if (current.residual) {
+        const pathY = camera.position.y
+        const carry = fade(t) * current.seconds
+        camera.position.addScaledVector(current.residual.camera, carry)
+        controls.target.addScaledVector(current.residual.target, carry)
+        // A carried-over dive is cushioned so it can't take the camera into
+        // the ground; the planned path itself is never altered.
+        if (camera.position.y < pathY) camera.position.y = Math.min(pathY, cushion(camera.position.y))
+      }
       camera.lookAt(controls.target)
+      recordMotion()
+      lastFrameAt.current = performance.now() / 1000
       return
     }
 
-    if (mode !== 'overview' || prefersReducedMotion) return
-
-    const now = performance.now() / 1000
-    if (now - lastInputAt.current < CAMERA.idleDelay) return
-
-    const step = Math.min(delta, CAMERA.maxFrameDelta) * CAMERA.idleDriftSpeed
-    offset.copy(camera.position).sub(controls.target).applyAxisAngle(UP, step)
-    camera.position.copy(controls.target).add(offset)
-    camera.lookAt(controls.target)
+    const idle = performance.now() / 1000 - lastInputAt.current >= CAMERA.idleDelay
+    if (mode === 'overview' && !prefersReducedMotion && idle) {
+      const step = Math.min(delta, CAMERA.maxFrameDelta) * CAMERA.idleDriftSpeed
+      offset.copy(camera.position).sub(controls.target).applyAxisAngle(UP, step)
+      camera.position.copy(controls.target).add(offset)
+      camera.lookAt(controls.target)
+    }
+    recordMotion()
+    lastFrameAt.current = performance.now() / 1000
   })
 
   return (
