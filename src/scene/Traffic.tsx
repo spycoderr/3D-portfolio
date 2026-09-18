@@ -4,11 +4,14 @@ import { useEstate } from '@/store/useEstate'
 import {
   BoxGeometry,
   BufferGeometry,
+  CanvasTexture,
   Color,
   CylinderGeometry,
   InstancedMesh,
   Matrix4,
+  MeshBasicMaterial,
   MeshLambertMaterial,
+  PlaneGeometry,
   Quaternion,
   Vector3,
 } from 'three'
@@ -34,12 +37,33 @@ const basis = new Matrix4()
 const axleOffset = new Matrix4()
 const axleSpin = new Matrix4()
 const axleMatrix = new Matrix4()
+const blobMatrix = new Matrix4()
+const heading = new Quaternion()
+const blobPosition = new Vector3()
 
 type TrafficResources = {
   body: BufferGeometry
   axle: BufferGeometry
   bodyMaterial: MeshLambertMaterial
   wheelMaterial: MeshLambertMaterial
+  blob: BufferGeometry
+  blobMaterial: MeshBasicMaterial
+}
+
+// A soft dark oval, darkest in the middle, fading to nothing at the edge.
+function createBlobTexture(): CanvasTexture {
+  const size = TRAFFIC.blobTextureSize
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')!
+  const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(0,0,0,1)')
+  gradient.addColorStop(0.55, 'rgba(0,0,0,0.7)')
+  gradient.addColorStop(1, 'rgba(0,0,0,0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, size, size)
+  return new CanvasTexture(canvas)
 }
 
 let resources: TrafficResources | null = null
@@ -70,11 +94,22 @@ function getResources(): TrafficResources {
   left.translate(-TRAFFIC.track / 2, 0, 0)
   right.translate(TRAFFIC.track / 2, 0, 0)
 
+  const blob = new PlaneGeometry(TRAFFIC.blobWidth, TRAFFIC.blobLength)
+  blob.rotateX(-Math.PI / 2)
+
   resources = {
     body: mergeGeometries([hull, cabin], false),
     axle: mergeGeometries([left, right], false),
     bodyMaterial: new MeshLambertMaterial(),
     wheelMaterial: new MeshLambertMaterial({ color: COLORS.ink }),
+    blob,
+    blobMaterial: new MeshBasicMaterial({
+      color: '#000000',
+      alphaMap: createBlobTexture(),
+      transparent: true,
+      opacity: TRAFFIC.blobOpacity,
+      depthWrite: false,
+    }),
   }
 
   return resources
@@ -104,11 +139,12 @@ function createVehicles(): Vehicle[] {
 export function Traffic() {
   const bodyRef = useRef<InstancedMesh>(null)
   const axleRef = useRef<InstancedMesh>(null)
+  const blobRef = useRef<InstancedMesh>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
   const paused = useEstate((state) => state.paused)
 
   const vehicles = useRef<Vehicle[]>(createVehicles())
-  const { body, axle, bodyMaterial, wheelMaterial } = getResources()
+  const { body, axle, bodyMaterial, wheelMaterial, blob, blobMaterial } = getResources()
 
   useEffect(() => {
     const mesh = bodyRef.current
@@ -123,7 +159,8 @@ export function Traffic() {
   useFrame((state, delta) => {
     const bodyMesh = bodyRef.current
     const axleMesh = axleRef.current
-    if (!bodyMesh || !axleMesh) return
+    const blobMesh = blobRef.current
+    if (!bodyMesh || !axleMesh || !blobMesh) return
 
     const step = Math.min(delta, 0.05)
     const moving = !prefersReducedMotion && !paused
@@ -150,6 +187,12 @@ export function Traffic() {
       basis.makeBasis(right, up, forward)
       orientation.setFromRotationMatrix(basis)
 
+      // The blob lies flat and follows the heading, never the body's roll.
+      heading.copy(orientation)
+      blobPosition.set(position.x, TRAFFIC.blobY, position.z)
+      blobMatrix.compose(blobPosition, heading, UNIT_SCALE)
+      blobMesh.setMatrixAt(index, blobMatrix)
+
       const bank = Math.max(
         -TRAFFIC.maxBank,
         Math.min(
@@ -175,6 +218,7 @@ export function Traffic() {
 
     bodyMesh.instanceMatrix.needsUpdate = true
     axleMesh.instanceMatrix.needsUpdate = true
+    blobMesh.instanceMatrix.needsUpdate = true
   })
 
   return (
@@ -182,14 +226,21 @@ export function Traffic() {
       <instancedMesh
         ref={bodyRef}
         args={[body, bodyMaterial, VEHICLE_COUNT]}
-        castShadow
+        castShadow={false}
         receiveShadow={false}
       />
       <instancedMesh
         ref={axleRef}
         args={[axle, wheelMaterial, VEHICLE_COUNT * 2]}
-        castShadow
+        castShadow={false}
         receiveShadow={false}
+      />
+      <instancedMesh
+        ref={blobRef}
+        args={[blob, blobMaterial, VEHICLE_COUNT]}
+        castShadow={false}
+        receiveShadow={false}
+        raycast={() => null}
       />
     </group>
   )

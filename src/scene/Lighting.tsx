@@ -6,6 +6,7 @@ import { useEstate } from '@/store/useEstate'
 import { themes } from '@/theme'
 import { DUSK, LIGHTING } from './constants'
 import { applyColours, dusk, stage } from './dusk'
+import { requestShadowUpdate, takeShadowRequest } from './shadows'
 
 // The sun moves on a sphere round the estate: same bearing, same distance, only
 // its height changes. Keeping the distance is what keeps the shadow frustum's
@@ -30,6 +31,7 @@ export function Lighting() {
   const sunRef = useRef<DirectionalLight>(null!)
   const hemiRef = useRef<HemisphereLight>(null!)
   const scene = useThree((state) => state.scene)
+  const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
   const theme = useEstate((state) => state.theme)
   const prefersReducedMotion = usePrefersReducedMotion()
@@ -50,6 +52,21 @@ export function Lighting() {
     // three does not rebuild the shadow projection when these change.
     shadow.updateProjectionMatrix()
   }, [])
+
+  // The shadow map is redrawn only on request. The check runs in the scene's
+  // pre-render hook, which three calls before the shadow pass, so a request
+  // made anywhere in a frame is honoured in that same frame.
+  useLayoutEffect(() => {
+    gl.shadowMap.autoUpdate = false
+    requestShadowUpdate()
+    scene.onBeforeRender = () => {
+      if (takeShadowRequest()) gl.shadowMap.needsUpdate = true
+    }
+    return () => {
+      scene.onBeforeRender = () => {}
+      gl.shadowMap.autoUpdate = true
+    }
+  }, [gl, scene])
 
   useLayoutEffect(() => {
     scene.background = sky
@@ -87,6 +104,8 @@ export function Lighting() {
     applyColours(colour * DUSK.surfaceFade)
 
     const light = stage(0, DUSK.lightEnd)
+    // The sun is moving, so every shadow moves with it.
+    requestShadowUpdate()
     const sun = sunRef.current
     const elevation = lerp(SUN_ELEVATION_DAY, DUSK.sunElevationDusk, light)
     sun.position.set(

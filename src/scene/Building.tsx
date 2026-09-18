@@ -35,6 +35,7 @@ import { palette, themes } from '@/theme'
 import { BUILDING, BUILDING_PROPS, CAMERA, COLORS, DUSK, UI } from './constants'
 import { cascadeDelay, dusk, smooth, trackColour } from './dusk'
 import { boxRaycast } from './raycast'
+import { requestShadowUpdate } from './shadows'
 import { PAD_TOP } from './room'
 
 // One material per colour, shared by every building that uses it.
@@ -878,6 +879,8 @@ export function Buildings() {
 
       const next = settled ? current : current + (target - current) * smoothing
       lifts.current.set(plot.id, next)
+      // A lifting building, or one giving way to its room, moves its shadow.
+      requestShadowUpdate()
 
       const group = groups.current.get(plot.id)
       if (group) group.position.y = next

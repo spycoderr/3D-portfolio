@@ -19,7 +19,7 @@ import { attachLoadingManager, finishStage } from './loading'
 import { Buildings } from './Building'
 import { Ground } from './Ground'
 import { GroundLabels } from './GroundLabels'
-import { Interiors } from './Interior'
+import { Interiors, precompileRoomMaterials } from './Interior'
 import { Lighting } from './Lighting'
 import { Props } from './Props'
 import { Road } from './Road'
@@ -38,7 +38,10 @@ function WarmUp({ onReady }: { onReady: () => void }) {
     if (fired.current) return
     // Compiling up front means the frames the visitor actually sees are never
     // the ones paying for shader compilation.
-    if (frames.current === 0) gl.compile(scene, camera)
+    if (frames.current === 0) {
+      gl.compile(scene, camera)
+      precompileRoomMaterials(gl, camera, scene)
+    }
     frames.current += 1
     if (frames.current >= UI.warmupFrames) {
       fired.current = true

@@ -82,6 +82,14 @@ export const TRAFFIC = {
   track: 0.74,
   wheelbase: 0.98,
   colors: ['#c2603f', '#37506b', '#f3efe6'],
+  // Cars don't cast real shadows: they move every frame, and a moving caster
+  // would force the whole shadow map to redraw every frame. A soft blob under
+  // each one grounds it instead, drawn just above the road markings.
+  blobLength: 2.0,
+  blobWidth: 1.05,
+  blobY: 0.092,
+  blobOpacity: 0.32,
+  blobTextureSize: 64,
 } as const
 
 // Camera

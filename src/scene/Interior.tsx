@@ -10,8 +10,12 @@ import {
   ConeGeometry,
   CylinderGeometry,
   MeshLambertMaterial,
+  Group,
+  Mesh,
   SRGBColorSpace,
-  type Group,
+  type Camera,
+  type Scene,
+  type WebGLRenderer,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { plots, type Exhibit, type Plot } from '@/data/plots'
@@ -23,6 +27,7 @@ import { stage } from './dusk'
 import { kitEntry, paintSurface, UNTEXTURED, type Mount } from './exhibitKit'
 import { boxRaycast } from './raycast'
 import { PAD_TOP, roomScale } from './room'
+import { requestShadowUpdate } from './shadows'
 
 // A three-walled cutaway that stands in for the building while its plot is
 // open. Only the active plot's room is ever mounted, and it disposes its own
@@ -381,6 +386,8 @@ function ExhibitMesh({ built }: { built: BuiltExhibit }) {
 
     const blend = prefersReducedMotion ? 1 : 1 - Math.pow(ROOM.hoverDecay, Math.min(delta, 0.05))
     level.current += (target - level.current) * blend
+    // No shadow redraw for this: a lift this small moves no shadow anyone can
+    // see, and redrawing the map would put the room over its draw budget.
     group.position.y = ROOM.exhibitLift * level.current
     built.rim.value = ROOM.rimStrength * level.current
   })
@@ -423,6 +430,12 @@ function Room({ plot }: { plot: Plot }) {
     roomLight.value = stage(DUSK.cascadeStart, DUSK.cascadeStart + DUSK.cascadeSpan + DUSK.windowFade)
   })
 
+  // The room arriving and leaving both change what casts shadows.
+  useEffect(() => {
+    requestShadowUpdate()
+    return requestShadowUpdate
+  }, [])
+
   // The atlas is kept for the next visit; everything else goes.
   useEffect(
     () => () => {
@@ -456,6 +469,34 @@ function Room({ plot }: { plot: Plot }) {
       ))}
     </group>
   )
+}
+
+// Rooms are only mounted when entered, so their shader programs would
+// otherwise be compiled on the first frame of the flight into one — a hitch on
+// a phone. Both are compiled behind the loading screen instead.
+//
+// three releases a program as soon as the last material using it is disposed,
+// and a room disposes its exhibit materials on the way out. So one exhibit
+// material is kept for the whole visit: it holds the program in the cache, and
+// no room after the first ever compiles it again.
+let programKeeper: MeshLambertMaterial | null = null
+
+export function precompileRoomMaterials(gl: WebGLRenderer, camera: Camera, scene: Scene): void {
+  if (!programKeeper) {
+    const blank = new CanvasTexture(document.createElement('canvas'))
+    blank.colorSpace = SRGBColorSpace
+    programKeeper = exhibitMaterial(blank).material
+  }
+  const stand = glow(tint(new BoxGeometry(1, 1, 1), '#ffffff'), 0)
+  const group = new Group()
+  // Receiving shadows is part of a program's identity, so the stand-ins must
+  // receive them just as the room's own meshes do.
+  for (const standIn of [new Mesh(stand, shellMaterial), new Mesh(stand, programKeeper)]) {
+    standIn.receiveShadow = true
+    group.add(standIn)
+  }
+  gl.compile(group, camera, scene)
+  stand.dispose()
 }
 
 export function Interiors() {
