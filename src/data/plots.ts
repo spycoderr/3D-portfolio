@@ -37,6 +37,8 @@ export type Plot = {
   title: string
   // Inside the room, the left overlay reads: eyebrow ("Plot 02 · 2025"), the
   // room's headline, then a one-line subhead above the exhibit list.
+  // The name in the tab bar, where space is short.
+  shortName: string
   eyebrow: string
   roomHeadline: string
   subhead: string
@@ -85,6 +87,7 @@ const definitions: PlotDefinition[] = [
     id: "spendsense",
     plotNumber: "Plot 01",
     title: "SpendSense",
+    shortName: "SpendSense",
     // Year and wording to be written in R8.
     eyebrow: "Plot 01",
     roomHeadline: "Inside SpendSense",
@@ -111,6 +114,7 @@ const definitions: PlotDefinition[] = [
     id: "pulsedesk",
     plotNumber: "Plot 02",
     title: "PulseDesk",
+    shortName: "PulseDesk",
     // Year and wording to be written in R8.
     eyebrow: "Plot 02",
     roomHeadline: "Inside PulseDesk",
@@ -137,6 +141,7 @@ const definitions: PlotDefinition[] = [
     id: "fingerprint",
     plotNumber: "Plot 03",
     title: "Fingerprint Match",
+    shortName: "Fingerprint",
     // Year and wording to be written in R8.
     eyebrow: "Plot 03",
     roomHeadline: "Inside Fingerprint Match",
@@ -163,6 +168,7 @@ const definitions: PlotDefinition[] = [
     id: "finalsay",
     plotNumber: "Plot 04",
     title: "FinalSay",
+    shortName: "FinalSay",
     // Year and wording to be written in R8.
     eyebrow: "Plot 04",
     roomHeadline: "Inside FinalSay",
@@ -189,6 +195,7 @@ const definitions: PlotDefinition[] = [
     id: "wattsense",
     plotNumber: "Plot 05",
     title: "WattSense",
+    shortName: "WattSense",
     // Year and wording to be written in R8.
     eyebrow: "Plot 05",
     roomHeadline: "Inside WattSense",
@@ -215,6 +222,7 @@ const definitions: PlotDefinition[] = [
     id: "about",
     plotNumber: "About",
     title: "About",
+    shortName: "About",
     // Year and wording to be written in R8.
     eyebrow: "About",
     roomHeadline: "Inside About",
@@ -246,6 +254,7 @@ const definitions: PlotDefinition[] = [
     id: "contact",
     plotNumber: "Contact",
     title: "Contact",
+    shortName: "Contact",
     eyebrow: "",
     roomHeadline: "",
     subhead: "",

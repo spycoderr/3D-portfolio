@@ -13,6 +13,8 @@ export const profile = {
   // The one-line role under the wordmark.
   wordmark: "nilabh",
   roleLine: "computer engineering",
+  // Bottom right, beside a small accent dot.
+  location: "Patiala, India",
   skills: {
     languages: ["JavaScript", "TypeScript", "Python", "C++"],
     frontend: ["React", "Tailwind CSS", "Framer Motion"],

@@ -19,18 +19,14 @@ export default {
       maxWidth: {
         prose: '66ch',
       },
+      // Set at runtime from src/theme.ts (see useThemeVariables), so the UI
+      // follows the dusk toggle and never drifts from the scene's palette.
       colors: {
-        sky: '#cfe0ea',
-        grass: '#8fb56a',
-        'grass-dark': '#6f9a55',
-        road: '#5f6771',
-        kerb: '#cfc9b8',
-        sand: '#e6ddca',
-        brick: '#c2603f',
-        slate: '#37506b',
-        moss: '#4e7a4a',
-        ink: '#1d2430',
-        paper: '#f3efe6',
+        ink: 'rgb(var(--ui-ink) / <alpha-value>)',
+        paper: 'rgb(var(--ui-paper) / <alpha-value>)',
+        sky: 'rgb(var(--ui-sky) / <alpha-value>)',
+        accent: 'rgb(var(--ui-accent) / <alpha-value>)',
+        'on-accent': 'rgb(var(--ui-on-accent) / <alpha-value>)',
       },
     },
   },

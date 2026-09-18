@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
+import { site } from '@/data/site'
 import { useEstate } from '@/store/useEstate'
 
-// The controls cluster, top right of the canvas. The theme toggle belongs to
-// the campus; inside a room its place goes to the way back out.
+// The controls cluster, placed top right by the overlay. The theme toggle
+// belongs to the campus; inside a room its place goes to a labelled pill,
+// wider than the icons, because it is the main way back out.
 function RoundButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -34,14 +36,15 @@ export function SceneControls() {
   const theme = useEstate((state) => state.theme)
   const paused = useEstate((state) => state.paused)
   const togglePaused = useEstate((state) => state.togglePaused)
-  const exhibitOpen = useEstate((state) => state.activeExhibitId !== null)
   const toggleTheme = useEstate((state) => state.toggleTheme)
   const requestReset = useEstate((state) => state.requestReset)
-  const back = useEstate((state) => state.back)
+  const backToCampus = useEstate((state) => state.backToCampus)
 
   return (
     <div
-      className={`absolute right-3 top-3 z-20 flex items-center gap-2 ${exhibitOpen ? 'lg:right-[392px]' : ''}`}
+      role="group"
+      aria-label="Scene controls"
+      className="pointer-events-auto flex items-center gap-2"
     >
       {level === 'campus' ? (
         <RoundButton label={theme === 'day' ? 'Switch to dusk' : 'Switch to day'} onClick={toggleTheme}>
@@ -59,10 +62,12 @@ export function SceneControls() {
       ) : (
         <button
           type="button"
-          onClick={back}
-          className="flex h-11 items-center rounded-full border border-ink/15 bg-paper/90 px-4 font-body text-step-0 text-ink/80 hover:border-ink/40 hover:text-ink"
+          onClick={backToCampus}
+          className="flex h-11 items-center gap-2 rounded-full border border-ink/15 bg-paper/90 px-4 font-body text-step-0 text-ink hover:border-ink/40"
         >
-          ← Back
+          <span aria-hidden>←</span>
+          <span className="sm:hidden">{site.backLabelShort}</span>
+          <span className="max-sm:hidden">{site.backLabel}</span>
         </button>
       )}
       <RoundButton label={paused ? 'Resume motion' : 'Pause motion'} onClick={togglePaused}>

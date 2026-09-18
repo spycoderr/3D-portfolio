@@ -11,4 +11,13 @@ export const site = {
   orientationDismiss: 'Got it',
   // The last destination in the list, which opens the PDF rather than a room.
   resumeLabel: 'My resume',
+  // The way out of a room. The short form is for phones, where the long one
+  // would run into the wordmark.
+  backLabel: 'Back to the society',
+  backLabelShort: 'Back',
+  // Under the tab bar. Touch has no scroll wheel.
+  hintPointer: 'Drag to rotate · Scroll to zoom',
+  hintTouch: 'Drag to rotate · Pinch to zoom',
+  // On touch, the tap that lets the estate be rotated.
+  tapToExplore: 'Tap to explore',
 } as const

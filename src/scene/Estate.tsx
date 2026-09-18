@@ -3,11 +3,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useProgress } from '@react-three/drei'
 import { DefaultLoadingManager } from 'three'
 import { HoverLabel } from '@/components/ui/HoverLabel'
-import { PlotPanel } from '@/components/ui/PlotPanel'
 import { FirstRunCard } from '@/components/ui/FirstRunCard'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
-import { SceneControls } from '@/components/ui/SceneControls'
 import { PerfHud, type PerfSample } from './PerfHud'
+import { site } from '@/data/site'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useRenderGate } from '@/hooks/useRenderGate'
@@ -52,35 +51,25 @@ function WarmUp({ onReady }: { onReady: () => void }) {
   return null
 }
 
+// On touch, rotating waits for a deliberate tap, so that until then a swipe
+// over the canvas is always a page scroll. With a mouse, dragging can never
+// be mistaken for scrolling, and the controls hint under the tab bar says how.
 function EngagementHint() {
-  const engage = useEstate((state) => state.markInteracted)
+  const markInteracted = useEstate((state) => state.markInteracted)
   const coarsePointer = useCoarsePointer()
-
-  const label = (
-    <span className="border border-ink/15 bg-paper/90 px-4 py-2 font-body text-step-0 text-ink/70">
-      {coarsePointer ? 'Tap to explore' : 'Drag to explore'}
-    </span>
-  )
-
-  // On touch the hint is the only way in, because until the visitor engages a
-  // swipe over the canvas has to stay a page scroll.
-  if (coarsePointer) {
-    return (
-      <button
-        type="button"
-        onClick={engage}
-        style={{ touchAction: 'pan-y' }}
-        className="absolute inset-0 flex items-end justify-center pb-6"
-      >
-        {label}
-      </button>
-    )
-  }
+  if (!coarsePointer) return null
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
-      {label}
-    </div>
+    <button
+      type="button"
+      onClick={markInteracted}
+      style={{ touchAction: 'pan-y' }}
+      className="absolute inset-0 flex items-center justify-center"
+    >
+      <span className="rounded-full border border-ink/15 bg-paper/90 px-4 py-2 font-body text-step-0 text-ink/80">
+        {site.tapToExplore}
+      </span>
+    </button>
   )
 }
 
@@ -175,8 +164,6 @@ export function Estate() {
 
       {ready && !hasInteracted && <EngagementHint />}
       {ready && <HoverLabel container={container} />}
-      {ready && <PlotPanel />}
-      {ready && <SceneControls />}
       {loaderGone && <FirstRunCard />}
 
       {showPerf && perf && (

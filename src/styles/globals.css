@@ -8,9 +8,41 @@ body,
   height: 100%;
 }
 
+/* First paint only: src/theme.ts is the source of these colours, and
+   useThemeVariables writes them onto the root as soon as the app runs. The
+   dusk values apply when index.html has already read a stored dusk theme. */
+:root {
+  --ui-ink: 33 41 52;
+  --ui-paper: 243 239 230;
+  --ui-sky: 223 230 221;
+  --ui-accent: 194 96 63;
+  --ui-on-accent: 243 239 230;
+}
+
+:root[data-theme='dusk'] {
+  --ui-ink: 240 236 226;
+  --ui-paper: 31 39 53;
+  --ui-sky: 26 33 48;
+  --ui-on-accent: 240 236 226;
+}
+
 body {
   margin: 0;
-  background: #f3efe6;
-  color: #1d2430;
+  background: rgb(var(--ui-paper));
+  color: rgb(var(--ui-ink));
   font-family: 'Inter', sans-serif;
+}
+
+/* Every control shows where keyboard focus is, in the one accent colour. */
+:focus-visible {
+  outline: 2px solid rgb(var(--ui-accent));
+  outline-offset: 3px;
+}
+
+/* The tab bar scrolls sideways on narrow screens without showing a bar. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }

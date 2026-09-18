@@ -133,6 +133,17 @@ export type PaletteToken = keyof Palette
 // the exhibit claim line.
 export const ACCENT = '#c2603f'
 
+// The page's own colours, which follow the theme the same as the scene does.
+// ink is type, paper is the page and any surface type sits on, sky is the
+// void behind the slab. At dusk type goes light on dark.
+// onAccent is type laid on the accent itself, light in both themes.
+export type UiColours = { ink: string; paper: string; sky: string; onAccent: string }
+
+export const ui: Record<ThemeName, UiColours> = {
+  day: { ink: day.ink, paper: day.paper, sky: day.groundFar, onAccent: day.paper },
+  dusk: { ink: dusk.paper, paper: '#1f2735', sky: dusk.groundFar, onAccent: dusk.paper },
+}
+
 export const TYPE = {
   display: "'Bricolage Grotesque', sans-serif",
   body: "'Inter', sans-serif",
