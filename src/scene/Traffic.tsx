@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { useEstate } from '@/store/useEstate'
 import {
   BoxGeometry,
   BufferGeometry,
@@ -104,6 +105,7 @@ export function Traffic() {
   const bodyRef = useRef<InstancedMesh>(null)
   const axleRef = useRef<InstancedMesh>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
+  const paused = useEstate((state) => state.paused)
 
   const vehicles = useRef<Vehicle[]>(createVehicles())
   const { body, axle, bodyMaterial, wheelMaterial } = getResources()
@@ -124,7 +126,7 @@ export function Traffic() {
     if (!bodyMesh || !axleMesh) return
 
     const step = Math.min(delta, 0.05)
-    const moving = !prefersReducedMotion
+    const moving = !prefersReducedMotion && !paused
     const elapsed = state.clock.elapsedTime
 
     vehicles.current.forEach((vehicle, index) => {

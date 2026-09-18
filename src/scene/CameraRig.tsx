@@ -174,6 +174,7 @@ export function CameraRig() {
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
   const resetRequest = useEstate((state) => state.resetRequest)
+  const paused = useEstate((state) => state.paused)
   const hasEngaged = useEstate((state) => state.hasEngaged)
   const engage = useEstate((state) => state.engage)
 
@@ -244,7 +245,9 @@ export function CameraRig() {
     element.addEventListener('wheel', markInput, { passive: true })
     element.addEventListener('touchstart', markInput, { passive: true })
     element.addEventListener('touchmove', markInput, { passive: true })
+    window.addEventListener('keydown', markInput)
     return () => {
+      window.removeEventListener('keydown', markInput)
       element.removeEventListener('pointerdown', onPointerDown)
       element.removeEventListener('pointermove', onPointerMove)
       element.removeEventListener('wheel', markInput)
@@ -423,7 +426,7 @@ export function CameraRig() {
     }
 
     const idle = performance.now() / 1000 - lastInputAt.current >= CAMERA.idleDelay
-    if (mode === 'overview' && !prefersReducedMotion && idle) {
+    if (mode === 'overview' && !prefersReducedMotion && !paused && idle) {
       const step = Math.min(delta, CAMERA.maxFrameDelta) * CAMERA.idleDriftSpeed
       offset.copy(camera.position).sub(controls.target).applyAxisAngle(UP, step)
       camera.position.copy(controls.target).add(offset)

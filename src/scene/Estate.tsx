@@ -1,7 +1,11 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { useProgress } from '@react-three/drei'
+import { DefaultLoadingManager } from 'three'
 import { HoverLabel } from '@/components/ui/HoverLabel'
 import { PlotPanel } from '@/components/ui/PlotPanel'
+import { FirstRunCard } from '@/components/ui/FirstRunCard'
+import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { SceneControls } from '@/components/ui/SceneControls'
 import { PerfHud, type PerfSample } from './PerfHud'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
@@ -11,6 +15,7 @@ import { useEstate } from '@/store/useEstate'
 import { CameraRig } from './CameraRig'
 import { CAMERA, PERF, UI } from './constants'
 import { pixelRatioFor } from './deviceTier'
+import { attachLoadingManager, finishStage } from './loading'
 import { Buildings } from './Building'
 import { Ground } from './Ground'
 import { GroundLabels } from './GroundLabels'
@@ -76,12 +81,19 @@ function EngagementHint() {
   )
 }
 
+// The scene's code has arrived, so the stages can now be counted by the
+// loading manager that useProgress reads.
+attachLoadingManager(DefaultLoadingManager)
+
 // Only ever true in dev, and only when asked for, so the HUD can never cost a
 // visitor a frame.
 const showPerf = import.meta.env.DEV && new URLSearchParams(window.location.search).has('perf')
 
 export function Estate() {
   const [ready, setReady] = useState(false)
+  // The loading screen stays mounted through its fade-out, then goes.
+  const [loaderGone, setLoaderGone] = useState(false)
+  const { progress } = useProgress()
   const [perf, setPerf] = useState<PerfSample | null>(null)
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const prefersReducedMotion = usePrefersReducedMotion()
@@ -142,22 +154,27 @@ export function Estate() {
             <Interiors />
             <Traffic />
             <CameraRig />
-            <WarmUp onReady={() => setReady(true)} />
+            <WarmUp
+              onReady={() => {
+                // The last stage: every other one finished before the scene
+                // could render at all, so this is the counter reaching 100.
+                finishStage('frame')
+                setReady(true)
+                window.setTimeout(() => setLoaderGone(true), prefersReducedMotion ? 0 : UI.revealDurationMs)
+              }}
+            />
             {showPerf && <PerfHud onSample={setPerf} />}
           </Suspense>
         </Canvas>
       </div>
 
-      {!ready && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p className="font-body text-step-0 text-ink/40">Loading the estate</p>
-        </div>
-      )}
+      {!loaderGone && <LoadingScreen progress={progress} leaving={ready} />}
 
       {ready && !hasEngaged && <EngagementHint />}
       {ready && <HoverLabel container={container} />}
       {ready && <PlotPanel />}
       {ready && <SceneControls />}
+      {loaderGone && <FirstRunCard />}
 
       {showPerf && perf && (
         <div className="pointer-events-none absolute left-3 top-3 border border-ink/20 bg-paper/95 px-3 py-2 font-mono text-[11px] leading-tight text-ink/80">

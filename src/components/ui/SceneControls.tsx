@@ -32,6 +32,8 @@ const icon = {
 export function SceneControls() {
   const mode = useEstate((state) => state.mode)
   const theme = useEstate((state) => state.theme)
+  const paused = useEstate((state) => state.paused)
+  const togglePaused = useEstate((state) => state.togglePaused)
   const exhibitOpen = useEstate((state) => state.activeExhibitId !== null)
   const toggleTheme = useEstate((state) => state.toggleTheme)
   const requestReset = useEstate((state) => state.requestReset)
@@ -63,6 +65,17 @@ export function SceneControls() {
           ← Back
         </button>
       )}
+      <RoundButton label={paused ? 'Resume motion' : 'Pause motion'} onClick={togglePaused}>
+        {paused ? (
+          <svg {...icon}>
+            <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+          </svg>
+        ) : (
+          <svg {...icon}>
+            <path d="M9 5v14M15 5v14" />
+          </svg>
+        )}
+      </RoundButton>
       <RoundButton label="Reset view" onClick={requestReset}>
         <svg {...icon}>
           <path d="M3 12a9 9 0 1 0 3-6.7" />

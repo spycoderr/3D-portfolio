@@ -2,22 +2,23 @@ import { create } from 'zustand'
 import type { ThemeName } from '@/theme'
 
 const THEME_KEY = 'estate.theme'
+const PAUSED_KEY = 'estate.paused'
 
 // Storage can be missing or throw (private windows, blocked site data), and
-// the site must still open in daylight when it does.
-function storedTheme(): ThemeName {
+// the site must still open, in daylight and moving, when it does.
+function read(key: string): string | null {
   try {
-    return window.localStorage.getItem(THEME_KEY) === 'dusk' ? 'dusk' : 'day'
+    return window.localStorage.getItem(key)
   } catch {
-    return 'day'
+    return null
   }
 }
 
-function storeTheme(theme: ThemeName) {
+function write(key: string, value: string) {
   try {
-    window.localStorage.setItem(THEME_KEY, theme)
+    window.localStorage.setItem(key, value)
   } catch {
-    // Remembering is a convenience; the toggle still works for this visit.
+    // Remembering is a convenience; the control still works for this visit.
   }
 }
 
@@ -39,6 +40,9 @@ type EstateState = {
   // is what makes hovering either one light up the other.
   hoveredExhibitId: string | null
   theme: ThemeName
+  // Freezes every ambient motion: traffic and the idle drift. Camera moves the
+  // visitor asks for still run.
+  paused: boolean
   // Bumped to ask the camera to reframe its current level. A counter rather
   // than a flag, so asking twice in a row still reaches the camera twice.
   resetRequest: number
@@ -52,6 +56,7 @@ type EstateState = {
   // Steps back exactly one level: exhibit to room, room to campus.
   back: () => void
   toggleTheme: () => void
+  togglePaused: () => void
   requestReset: () => void
 }
 
@@ -62,7 +67,8 @@ export const useEstate = create<EstateState>()((set, get) => ({
   hoveredPlotId: null,
   activeExhibitId: null,
   hoveredExhibitId: null,
-  theme: storedTheme(),
+  theme: read(THEME_KEY) === 'dusk' ? 'dusk' : 'day',
+  paused: read(PAUSED_KEY) === 'true',
   resetRequest: 0,
 
   engage: () => set({ hasEngaged: true }),
@@ -97,8 +103,14 @@ export const useEstate = create<EstateState>()((set, get) => ({
   toggleTheme: () =>
     set((state) => {
       const theme = state.theme === 'day' ? 'dusk' : 'day'
-      storeTheme(theme)
+      write(THEME_KEY, theme)
       return { theme }
+    }),
+
+  togglePaused: () =>
+    set((state) => {
+      write(PAUSED_KEY, String(!state.paused))
+      return { paused: !state.paused }
     }),
 
   requestReset: () => set((state) => ({ resetRequest: state.resetRequest + 1 })),

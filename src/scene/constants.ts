@@ -102,7 +102,8 @@ export const CAMERA = {
   zoomSpeed: 0.7,
   dampingFactor: 0.06,
   idleDriftSpeed: 0.015,
-  idleDelay: 4,
+  // Seconds untouched at campus level before the camera starts to drift.
+  idleDelay: 5,
   // A backgrounded tab resumes with one enormous delta; clamping it stops the
   // drift from lurching on the first frame back.
   maxFrameDelta: 0.05,
@@ -373,6 +374,20 @@ export const UI = {
   // The detail panel slides in from the right on desktop, up from the bottom
   // on mobile. Short enough to feel attached to the camera flight it follows.
   panelTransitionMs: 260,
+} as const
+
+// The loading screen and the first-run card.
+export const LOADING = {
+  // How long a font that can't be had is waited for before the scene is drawn
+  // in a fallback face.
+  fontTimeoutMs: 4000,
+  // The counter climbs toward the real percentage, never past it. Per-second
+  // decay, frame-rate independent via 1 - decay^dt.
+  counterDecay: 0.002,
+  // Within this many percent of the real figure, the counter shows it exactly.
+  counterSnap: 0.5,
+  // The first-run card waits for the reveal to finish before appearing.
+  firstRunDelayMs: 900,
 } as const
 
 // The budget the scene is held to, and the levers for meeting it on hardware
