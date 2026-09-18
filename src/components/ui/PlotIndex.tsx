@@ -1,11 +1,61 @@
 import { plots } from '@/data/plots'
-import { palette } from '@/theme'
 import { useEstate } from '@/store/useEstate'
+import { ACCENT, palette } from '@/theme'
 
 // A text directory beside the canvas, so a plot is reachable without hunting
 // for its building on the ring — the only path in on a coarse pointer, where
 // hover has nothing to sync to.
 const directoryPlots = plots.filter((plot) => plot.kind !== 'contact')
+
+// Inside a room the directory gives way to that room's exhibits. Hovering an
+// entry lights its object and hovering the object lights its entry, because
+// both read and write the same store field.
+function ExhibitList({ plotId }: { plotId: string }) {
+  const plot = plots.find((entry) => entry.id === plotId)
+  const hoveredExhibitId = useEstate((state) => state.hoveredExhibitId)
+  const activeExhibitId = useEstate((state) => state.activeExhibitId)
+  const setHoveredExhibit = useEstate((state) => state.setHoveredExhibit)
+  const selectExhibit = useEstate((state) => state.selectExhibit)
+  const clearSelection = useEstate((state) => state.clearSelection)
+  if (!plot) return null
+
+  return (
+    <nav aria-label={`Inside ${plot.title}`} className="mt-14 flex flex-col">
+      <button
+        type="button"
+        onClick={clearSelection}
+        className="self-start font-body text-step-0 text-ink/60 hover:text-ink"
+      >
+        ← All plots
+      </button>
+      <div className="mt-4 font-body text-step-0 text-ink/50">{plot.plotNumber}</div>
+      <div className="font-display text-step-3 leading-tight text-ink">{plot.title}</div>
+
+      <ul className="mt-5 flex flex-col border-t border-ink/15">
+        {plot.exhibits.map((exhibit) => {
+          const lit = exhibit.id === hoveredExhibitId || exhibit.id === activeExhibitId
+          return (
+            <li key={exhibit.id}>
+              <button
+                type="button"
+                onClick={() => selectExhibit(exhibit.id)}
+                onMouseEnter={() => setHoveredExhibit(exhibit.id)}
+                onMouseLeave={() => setHoveredExhibit(null)}
+                onFocus={() => setHoveredExhibit(exhibit.id)}
+                onBlur={() => setHoveredExhibit(null)}
+                aria-current={exhibit.id === activeExhibitId ? 'true' : undefined}
+                className="w-full border-b border-ink/15 py-3 text-left font-body text-step-1"
+                style={{ color: lit ? ACCENT : undefined }}
+              >
+                {exhibit.name}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
+}
 
 export function PlotIndex() {
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
@@ -13,10 +63,12 @@ export function PlotIndex() {
   const selectPlot = useEstate((state) => state.selectPlot)
   const setHovered = useEstate((state) => state.setHovered)
 
+  if (selectedPlotId) return <ExhibitList plotId={selectedPlotId} />
+
   return (
     <nav aria-label="Plot directory" className="mt-14 flex flex-col border-t border-ink/15">
       {directoryPlots.map((plot) => {
-        const active = plot.id === selectedPlotId || plot.id === hoveredPlotId
+        const active = plot.id === hoveredPlotId
         return (
           <button
             key={plot.id}

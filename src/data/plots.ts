@@ -1,6 +1,35 @@
+import type { ExhibitObject } from '@/scene/exhibitKit'
 import type { PaletteToken } from '@/theme'
+import { profile } from './profile'
 
 export type BuildingProp = 'waterTank' | 'acUnit' | 'dish' | 'balcony' | 'chimney' | 'scooter' | 'hedge'
+
+// Something in a plot's room that is also an entry in its list. The object is
+// chosen from the generic kit by name; the words are this plot's own.
+export type Exhibit = {
+  id: string
+  // The list label: two or three words.
+  name: string
+  // The accent one-liner in the panel. States an outcome, not a technology.
+  claim: string
+  body: string[]
+  object: ExhibitObject
+  // Text a surface draws, for objects that show figures ("value|caption").
+  labels?: string[]
+}
+
+// Until R8 writes the real copy, every exhibit carries honest placeholders
+// rather than invented claims about the work.
+function draft(id: string, name: string, object: ExhibitObject, labels?: string[]): Exhibit {
+  return {
+    id,
+    name,
+    object,
+    labels,
+    claim: 'Placeholder claim. Written in R8.',
+    body: ['Placeholder paragraph. Written in R8.', 'Placeholder paragraph. Written in R8.'],
+  }
+}
 
 export type Plot = {
   id: string
@@ -25,11 +54,9 @@ export type Plot = {
   // Theme token names, not colours. The roof is the plot's identity and must be
   // unique across plots; walls and trim may repeat.
   palette: { wall: PaletteToken; roof: PaletteToken; trim: PaletteToken }
-  interior: {
-    monitorContent: "chart" | "board" | "code" | "graph" | "docs"
-    shelfItems: string[]
-    posterText: string
-  }
+  // Three per room. A room has two wall zones, each taking one wall or floor
+  // object, and two places on the desk.
+  exhibits: Exhibit[]
 }
 
 // Placement is derived, not hand-written: every plot on the ring is spaced
@@ -65,11 +92,11 @@ const definitions: PlotDefinition[] = [
     roofStyle: 'gable',
     props: ['chimney', 'scooter'],
     palette: { wall: 'sand', roof: 'clay', trim: 'ink' },
-    interior: {
-      monitorContent: "chart",
-      shelfItems: ["React", "Node", "MongoDB"],
-      posterText: "Track. Analyze. Thrive.",
-    },
+    exhibits: [
+      draft('categories', 'Category board', 'tileBoard'),
+      draft('trends', 'Spending trend', 'barTerminal'),
+      draft('receipts', 'Receipt cabinet', 'receiptCabinet'),
+    ],
   },
   {
     id: "pulsedesk",
@@ -87,11 +114,11 @@ const definitions: PlotDefinition[] = [
     roofStyle: 'flat',
     props: ['dish', 'balcony'],
     palette: { wall: 'paper', roof: 'indigo', trim: 'ink' },
-    interior: {
-      monitorContent: "board",
-      shelfItems: ["React", "Express", "PostgreSQL"],
-      posterText: "Collaborate. Organize. Ship.",
-    },
+    exhibits: [
+      draft('board', 'Kanban wall', 'kanbanWall'),
+      draft('calls', 'Support headset', 'headset'),
+      draft('status', 'Status rack', 'statusRack'),
+    ],
   },
   {
     id: "fingerprint",
@@ -109,11 +136,11 @@ const definitions: PlotDefinition[] = [
     roofStyle: 'hip',
     props: ['acUnit', 'hedge'],
     palette: { wall: 'sand', roof: 'ochre', trim: 'ink' },
-    interior: {
-      monitorContent: "code",
-      shelfItems: ["Python", "OpenCV", "TensorFlow"],
-      posterText: "Identify. Secure. Verify.",
-    },
+    exhibits: [
+      draft('capture', 'Document scanner', 'docScanner'),
+      draft('compare', 'Side by side', 'paperPair'),
+      draft('matches', 'Matched pairs', 'matchedStack'),
+    ],
   },
   {
     id: "finalsay",
@@ -131,11 +158,11 @@ const definitions: PlotDefinition[] = [
     roofStyle: 'hip',
     props: ['balcony', 'waterTank'],
     palette: { wall: 'paper', roof: 'plum', trim: 'ink' },
-    interior: {
-      monitorContent: "docs",
-      shelfItems: ["React", "Node", "Git API"],
-      posterText: "Version. Collaborate. Preserve.",
-    },
+    exhibits: [
+      draft('drafts', 'Layered notices', 'posterBoard'),
+      draft('signoff', 'Stamp and ledger', 'stampLedger'),
+      draft('history', 'Version tree', 'versionTree'),
+    ],
   },
   {
     id: "wattsense",
@@ -153,11 +180,11 @@ const definitions: PlotDefinition[] = [
     roofStyle: 'terrace',
     props: ['waterTank', 'dish'],
     palette: { wall: 'sand', roof: 'charcoal', trim: 'ink' },
-    interior: {
-      monitorContent: "graph",
-      shelfItems: ["IoT", "Node.js", "InfluxDB"],
-      posterText: "Monitor. Optimize. Save.",
-    },
+    exhibits: [
+      draft('meters', 'Meter panel', 'meterPanel'),
+      draft('appliances', 'Appliance cluster', 'applianceCluster'),
+      draft('load', 'Load curve', 'lineMonitor'),
+    ],
   },
   {
     id: "about",
@@ -175,11 +202,16 @@ const definitions: PlotDefinition[] = [
     roofStyle: 'gable',
     props: ['chimney', 'hedge'],
     palette: { wall: 'sand', roof: 'sage', trim: 'ink' },
-    interior: {
-      monitorContent: "docs",
-      shelfItems: ["Books", "Code", "Music"],
-      posterText: "Learn. Build. Share.",
-    },
+    exhibits: [
+      draft('reading', 'Bookshelf', 'bookshelf'),
+      draft('work', 'Study desk', 'laptopDesk'),
+      draft(
+        'numbers',
+        'Three numbers',
+        'statsFrames',
+        profile.stats.map((stat) => `${stat.value}|${stat.label}`),
+      ),
+    ],
   },
   {
     id: "contact",
@@ -203,11 +235,8 @@ const definitions: PlotDefinition[] = [
     // The noticeboard, not a building, so its swatch is deliberately neutral
     // rather than borrowing a roof identity that belongs to a plot.
     palette: { wall: 'sand', roof: 'ink', trim: 'ink' },
-    interior: {
-      monitorContent: "docs",
-      shelfItems: [],
-      posterText: "Let's talk",
-    },
+    // The noticeboard has no room to enter.
+    exhibits: [],
   },
 ]
 

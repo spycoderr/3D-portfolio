@@ -1,50 +1,62 @@
 import { useEffect, useRef, useState } from 'react'
-import { plots, type Plot } from '@/data/plots'
+import { plots, type Exhibit, type Plot } from '@/data/plots'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { UI } from '@/scene/constants'
 import { useEstate } from '@/store/useEstate'
+import { ACCENT } from '@/theme'
 
-// The panel outlives the selection by one transition, the same trick Interior
-// uses for the roof: closing content stays mounted so it can slide out rather
-// than vanishing mid-animation.
+// "plotId/exhibitId": a plain string, so the effect below can depend on it.
+type Key = string
+
+function resolve(key: Key): { plot: Plot; exhibit: Exhibit } | null {
+  const [plotId, exhibitId] = key.split('/')
+  const plot = plots.find((entry) => entry.id === plotId)
+  const exhibit = plot?.exhibits.find((entry) => entry.id === exhibitId)
+  return plot && exhibit ? { plot, exhibit } : null
+}
+
+// The exhibit panel. It outlives the selection by one transition, so closing
+// slides the content out instead of blanking it mid-animation. Closing returns
+// to the room, not to the campus.
 export function PlotPanel() {
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
-  const clearSelection = useEstate((state) => state.clearSelection)
+  const activeExhibitId = useEstate((state) => state.activeExhibitId)
+  const clearExhibit = useEstate((state) => state.clearExhibit)
   const prefersReducedMotion = usePrefersReducedMotion()
-  const selectedPlot = selectedPlotId ? (plots.find((entry) => entry.id === selectedPlotId) ?? null) : null
 
-  const [displayPlot, setDisplayPlot] = useState<Plot | null>(selectedPlot)
+  const currentKey: Key | null =
+    selectedPlotId && activeExhibitId ? `${selectedPlotId}/${activeExhibitId}` : null
+
+  const [shownKey, setShownKey] = useState<Key | null>(currentKey)
   const closeTimer = useRef<number | null>(null)
 
   useEffect(() => {
-    if (selectedPlot) {
+    if (currentKey) {
       if (closeTimer.current !== null) {
         window.clearTimeout(closeTimer.current)
         closeTimer.current = null
       }
-      setDisplayPlot(selectedPlot)
+      setShownKey(currentKey)
       return
     }
     if (prefersReducedMotion) {
-      setDisplayPlot(null)
+      setShownKey(null)
       return
     }
-    closeTimer.current = window.setTimeout(() => setDisplayPlot(null), UI.panelTransitionMs)
+    closeTimer.current = window.setTimeout(() => setShownKey(null), UI.panelTransitionMs)
     return () => {
       if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
     }
-  }, [selectedPlot, prefersReducedMotion])
+  }, [currentKey, prefersReducedMotion])
 
-  if (!displayPlot) return null
+  const shown = shownKey ? resolve(shownKey) : null
+  if (!shown) return null
 
-  const open = selectedPlot !== null
-  const plot = displayPlot
+  const open = currentKey !== null
+  const links = shown.plot.links.filter((link) => link.href !== '#')
 
   return (
-    <div
-      className="absolute inset-0 z-10 flex flex-col justify-end lg:flex-row lg:justify-end"
-      aria-hidden={!open}
-    >
+    <div className="absolute inset-0 z-10 flex flex-col justify-end lg:flex-row lg:justify-end" aria-hidden={!open}>
       <div
         className={`pointer-events-auto flex max-h-full w-full flex-col overflow-y-auto border-t border-ink/15 bg-paper/95 p-6 transition-transform ease-out lg:h-full lg:w-[380px] lg:border-l lg:border-t-0 ${
           open ? 'translate-y-0 lg:translate-x-0' : 'translate-y-full lg:translate-x-full lg:translate-y-0'
@@ -53,52 +65,34 @@ export function PlotPanel() {
       >
         <button
           type="button"
-          onClick={clearSelection}
-          aria-label="Close plot details"
+          onClick={clearExhibit}
+          aria-label="Close exhibit"
           className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center border border-ink/20 font-body text-step-1 leading-none text-ink/60 hover:border-ink/50 hover:text-ink"
         >
           &times;
         </button>
 
-        <div className="font-body text-step-0 uppercase tracking-wide text-ink/50">{plot.plotNumber}</div>
-        <h3 className="mt-1 max-w-[18ch] font-display text-step-3 leading-tight text-ink">{plot.title}</h3>
-        <p className="mt-1 font-body text-step-0 text-ink/60">{plot.tagline}</p>
+        <div className="font-body text-step-0 text-ink/50">
+          {shown.plot.plotNumber} · {shown.plot.title}
+        </div>
+        <h3 className="mt-1 max-w-[18ch] font-display text-step-4 leading-tight text-ink">{shown.exhibit.name}</h3>
+        <p className="mt-3 font-body text-step-1 leading-snug" style={{ color: ACCENT }}>
+          {shown.exhibit.claim}
+        </p>
 
-        <p className="mt-5 font-body text-step-0 leading-relaxed text-ink/80">{plot.summary}</p>
+        <div className="mt-5 flex flex-col gap-3">
+          {shown.exhibit.body.map((paragraph, index) => (
+            // Keyed by position: paragraphs are a fixed ordered list, and two of
+            // them are allowed to read the same.
+            <p key={index} className="font-body text-step-0 leading-relaxed text-ink/80">
+              {paragraph}
+            </p>
+          ))}
+        </div>
 
-        {plot.problem && (
-          <p className="mt-3 font-body text-step-0 leading-relaxed text-ink/70">{plot.problem}</p>
-        )}
-
-        {plot.highlights.length > 0 && (
-          <ul className="mt-5 flex flex-col gap-2">
-            {plot.highlights.map((item, index) => (
-              // Keyed by position: highlights are a fixed ordered list that never
-              // reorders, and two of them are allowed to read the same.
-              <li
-                key={index}
-                className="flex gap-2 font-body text-step-0 leading-relaxed text-ink/75"
-              >
-                <span className="text-ink/30">—</span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {plot.stack.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-2">
-            {plot.stack.map((tech) => (
-              <span key={tech} className="border border-ink/15 px-2.5 py-1 font-body text-step-0 text-ink/60">
-                {tech}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {plot.links.length > 0 && (
+        {links.length > 0 && (
           <div className="mt-6 flex flex-wrap gap-3">
-            {plot.links.map((link) => (
+            {links.map((link) => (
               <a
                 key={link.label}
                 href={link.href}

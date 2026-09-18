@@ -1,33 +1,49 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import {
+  Box3,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
   Color,
+  ConeGeometry,
   CylinderGeometry,
-  Group,
-  Mesh,
   MeshLambertMaterial,
-  PlaneGeometry,
   SRGBColorSpace,
-  SphereGeometry,
-  Vector3,
+  type Group,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { plots, type Plot } from '@/data/plots'
+import { plots, type Exhibit, type Plot } from '@/data/plots'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useEstate } from '@/store/useEstate'
-import { getOpenParts, type OpenParts } from './Building'
-import { COLORS, INTERIOR, REVEAL } from './constants'
+import { ACCENT, palette } from '@/theme'
+import { ROOM, UI } from './constants'
+import { kitEntry, paintSurface, UNTEXTURED, type Mount } from './exhibitKit'
+import { boxRaycast } from './raycast'
+import { PAD_TOP, roomScale } from './room'
 
-const roomMaterial = new MeshLambertMaterial({ vertexColors: true })
+// A three-walled cutaway that stands in for the building while its plot is
+// open. Only the active plot's room is ever mounted, and it disposes its own
+// geometry on the way out, so visiting every room leaves nothing behind.
 
-function box(w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
+const W = ROOM.width
+const D = ROOM.depth
+const H = ROOM.height
+const T = ROOM.wallThickness
+// Inner faces of the two walls, which is where wall and floor exhibits sit.
+const BACK_Z = -D / 2 + T
+const SIDE_X = -W / 2 + T
+const DESK_Z = BACK_Z + ROOM.deskDepth / 2 + 0.03
+// A room has room for this many exhibits; the atlas keeps one cell spare.
+const MAX_EXHIBITS = 3
+
+const shellMaterial = new MeshLambertMaterial({ vertexColors: true })
+
+function box(colour: string, w: number, h: number, d: number, x = 0, y = 0, z = 0): BufferGeometry {
   const geometry = new BoxGeometry(w, h, d)
   geometry.translate(x, y, z)
-  return geometry
+  return tint(geometry, colour)
 }
 
 function tint(geometry: BufferGeometry, colour: string): BufferGeometry {
@@ -49,477 +65,377 @@ function merge(parts: BufferGeometry[]): BufferGeometry {
   return merged
 }
 
-// The monitor is what tells you which project you are standing in, so each
-// kind gets its own drawing rather than a generic screen.
-function createScreenTexture(kind: Plot['interior']['monitorContent']): CanvasTexture {
-  const width = 320
-  const height = 208
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')!
-
-  context.fillStyle = COLORS.screenBg
-  context.fillRect(0, 0, width, height)
-
-  if (kind === 'chart') {
-    const bars = [0.25, 0.4, 0.34, 0.56, 0.68, 0.82]
-    context.fillStyle = '#4d7fae'
-    bars.forEach((value, index) => {
-      const barWidth = 34
-      const x = 34 + index * 44
-      const barHeight = value * 140
-      context.fillRect(x, height - 34 - barHeight, barWidth, barHeight)
-    })
-    context.fillStyle = '#7d8b99'
-    context.fillRect(24, height - 32, width - 48, 2)
-  }
-
-  if (kind === 'board') {
-    const columns = ['#c2603f', '#4d7fae', '#4e8a52']
-    columns.forEach((colour, column) => {
-      const x = 26 + column * 96
-      context.fillStyle = '#1c242e'
-      context.fillRect(x, 24, 80, height - 48)
-      context.fillStyle = colour
-      const cards = column === 1 ? 3 : 2
-      for (let card = 0; card < cards; card += 1) {
-        context.fillRect(x + 8, 36 + card * 40, 64, 28)
-      }
-    })
-  }
-
-  if (kind === 'code') {
-    const palette = ['#7fb2e5', '#c9a227', '#9fd39f', '#c98a8a']
-    for (let line = 0; line < 9; line += 1) {
-      const indent = (line % 3) * 18
-      context.fillStyle = palette[line % palette.length]
-      context.fillRect(28 + indent, 24 + line * 20, 60 + ((line * 37) % 150), 8)
-    }
-  }
-
-  if (kind === 'docs') {
-    context.fillStyle = '#e8e4da'
-    context.fillRect(24, 20, 190, height - 40)
-    context.fillStyle = '#9aa3ad'
-    for (let line = 0; line < 7; line += 1) {
-      context.fillRect(38, 40 + line * 20, 150 - ((line * 23) % 60), 6)
-    }
-    // Version history down the side.
-    context.fillStyle = '#1c242e'
-    context.fillRect(232, 20, 64, height - 40)
-    context.fillStyle = '#4d7fae'
-    for (let entry = 0; entry < 5; entry += 1) {
-      context.fillRect(242, 36 + entry * 32, 44, 18)
-    }
-  }
-
-  if (kind === 'graph') {
-    const points = [0.3, 0.45, 0.38, 0.62, 0.55, 0.78, 0.7]
-    context.strokeStyle = '#6fc0a8'
-    context.lineWidth = 4
-    context.beginPath()
-    points.forEach((value, index) => {
-      const x = 30 + index * 43
-      const y = height - 34 - value * 130
-      if (index === 0) context.moveTo(x, y)
-      else context.lineTo(x, y)
-    })
-    context.stroke()
-    context.fillStyle = '#7d8b99'
-    context.fillRect(24, height - 32, width - 48, 2)
-  }
-
-  const texture = new CanvasTexture(canvas)
-  texture.colorSpace = SRGBColorSpace
-  return texture
-}
-
-function createPosterTexture(text: string): CanvasTexture {
-  const width = 320
-  const height = 216
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')!
-
-  context.fillStyle = COLORS.paper
-  context.fillRect(0, 0, width, height)
-  context.fillStyle = COLORS.ink
-  context.font = 'bold 30px sans-serif'
-  context.textAlign = 'center'
-  context.textBaseline = 'middle'
-
-  const words = text.split(' ')
-  const lines: string[] = []
-  let current = ''
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word
-    if (context.measureText(candidate).width > width - 48 && current) {
-      lines.push(current)
-      current = word
-    } else {
-      current = candidate
-    }
-  }
-  if (current) lines.push(current)
-
-  lines.forEach((line, index) => {
-    context.fillText(line, width / 2, height / 2 + (index - (lines.length - 1) / 2) * 38)
-  })
-
-  const texture = new CanvasTexture(canvas)
-  texture.colorSpace = SRGBColorSpace
-  return texture
-}
-
-// One atlas for every shelf label, so the stack on the shelf costs one draw call.
-function createShelfAtlas(items: readonly string[]): CanvasTexture {
-  const cell = 128
-  const canvas = document.createElement('canvas')
-  canvas.width = cell
-  canvas.height = cell * Math.max(1, items.length)
-  const context = canvas.getContext('2d')!
-
-  items.forEach((item, index) => {
-    context.fillStyle = COLORS.shelfBlock
-    context.fillRect(0, index * cell, cell, cell)
-    context.fillStyle = COLORS.ink
-    context.font = 'bold 20px sans-serif'
-    context.textAlign = 'center'
-    context.textBaseline = 'middle'
-    context.fillText(item, cell / 2, index * cell + cell / 2, cell - 12)
-  })
-
-  const texture = new CanvasTexture(canvas)
-  texture.colorSpace = SRGBColorSpace
-  return texture
-}
-
-type RoomParts = {
-  furniture: BufferGeometry
-  screen: BufferGeometry
-  screenTexture: CanvasTexture
-  poster: BufferGeometry
-  posterTexture: CanvasTexture
-  labels: BufferGeometry | null
-  labelTexture: CanvasTexture | null
-}
-
-function composeRoom(plot: Plot, open: OpenParts): RoomParts {
+// Floor, two walls with skirting and a doorway, the section-cut caps along the
+// wall tops, and the furniture every room shares.
+function buildShell(plot: Plot): BufferGeometry {
+  const wall = palette[plot.palette.wall]
+  const identity = palette[plot.palette.roof]
+  const trim = palette[plot.palette.trim]
   const parts: BufferGeometry[] = []
-  const width = open.roomWidth
-  const depth = open.roomDepth
-  const floorY = open.roomFloorY
-  const isAbout = plot.kind === 'about'
 
-  parts.push(tint(box(INTERIOR.rugWidth, 0.012, INTERIOR.rugDepth, 0, floorY + 0.008, 0.1), COLORS.rug))
+  parts.push(box(palette.wood, W, ROOM.floorThickness, D, 0, -ROOM.floorThickness / 2, 0))
 
-  // Desk against the back wall, so the screen faces the way the camera arrives.
-  const deskWidth = Math.min(INTERIOR.deskWidth, width * 0.68)
-  const deskZ = -depth / 2 + INTERIOR.deskDepth / 2 + 0.1
-  const deskTopY = floorY + INTERIOR.deskHeight
+  // The back wall runs the full width; the side wall starts at its inner face
+  // and is broken by the doorway.
+  parts.push(box(wall, W, H, T, 0, H / 2, -D / 2 + T / 2))
+  const sideX = -W / 2 + T / 2
+  const doorStart = ROOM.doorCentreZ - ROOM.doorWidth / 2
+  const doorEnd = ROOM.doorCentreZ + ROOM.doorWidth / 2
+  const sideSegment = (from: number, to: number, bottom: number, top: number) =>
+    box(wall, T, top - bottom, to - from, sideX, (bottom + top) / 2, (from + to) / 2)
+  parts.push(sideSegment(BACK_Z, doorStart, 0, H))
+  parts.push(sideSegment(doorEnd, D / 2, 0, H))
+  parts.push(sideSegment(doorStart, doorEnd, ROOM.doorHeight, H))
+
+  // Door frame.
+  for (const z of [doorStart, doorEnd]) {
+    parts.push(box(palette.woodDark, T + 0.04, ROOM.doorHeight, 0.05, sideX, ROOM.doorHeight / 2, z))
+  }
+  parts.push(box(palette.woodDark, T + 0.04, 0.05, ROOM.doorWidth + 0.1, sideX, ROOM.doorHeight + 0.025, ROOM.doorCentreZ))
+
+  // A dark cap along the cut wall tops reads as an architectural section, and
+  // is what tells the eye these walls were sliced open for it.
+  const cap = 0.025
+  parts.push(box(trim, W, cap, T + 0.004, 0, H + cap / 2, -D / 2 + T / 2))
+  parts.push(box(trim, T + 0.004, cap, D - T, sideX, H + cap / 2, (BACK_Z + D / 2) / 2))
+
+  // Skirting, broken where the doorway is.
+  const skirt = ROOM.skirtingHeight
+  const skirtDepth = ROOM.skirtingDepth
+  parts.push(box(palette.woodDark, W - T, skirt, skirtDepth, T / 2, skirt / 2, BACK_Z + skirtDepth / 2))
+  for (const [from, to] of [
+    [BACK_Z, doorStart],
+    [doorEnd, D / 2],
+  ]) {
+    parts.push(box(palette.woodDark, skirtDepth, skirt, to - from, SIDE_X + skirtDepth / 2, skirt / 2, (from + to) / 2))
+  }
+
+  // Desk against the back wall, so anything on it faces the way the camera
+  // arrives.
+  const deskX = ROOM.deskCentreX
+  const legHeight = ROOM.deskHeight - ROOM.deskTopThickness
   parts.push(
-    tint(box(deskWidth, INTERIOR.deskTopThickness, INTERIOR.deskDepth, 0, deskTopY, deskZ), COLORS.wood),
+    box(palette.wood, ROOM.deskWidth, ROOM.deskTopThickness, ROOM.deskDepth, deskX, ROOM.deskHeight - ROOM.deskTopThickness / 2, DESK_Z),
   )
   for (const side of [-1, 1]) {
     parts.push(
-      tint(
-        box(
-          0.05,
-          INTERIOR.deskHeight,
-          INTERIOR.deskDepth - 0.06,
-          (side * (deskWidth - 0.05)) / 2,
-          floorY + INTERIOR.deskHeight / 2,
-          deskZ,
-        ),
-        COLORS.woodDark,
-      ),
+      box(palette.woodDark, 0.05, legHeight, ROOM.deskDepth - 0.06, deskX + side * (ROOM.deskWidth / 2 - 0.05), legHeight / 2, DESK_Z),
     )
   }
+  parts.push(box(palette.woodDark, ROOM.deskWidth - 0.1, 0.34, 0.02, deskX, legHeight - 0.17, DESK_Z - ROOM.deskDepth / 2 + 0.04))
 
-  // Monitor: stand and bezel here, the lit face is its own textured plane.
-  const monitorY = deskTopY + INTERIOR.monitorStandHeight + INTERIOR.monitorHeight / 2
-  parts.push(
-    tint(box(0.1, INTERIOR.monitorStandHeight, 0.1, 0, deskTopY + INTERIOR.monitorStandHeight / 2, deskZ), COLORS.screenFrame),
-  )
-  parts.push(
-    tint(
-      box(INTERIOR.monitorWidth + 0.05, INTERIOR.monitorHeight + 0.05, 0.03, 0, monitorY, deskZ - 0.01),
-      COLORS.screenFrame,
-    ),
-  )
+  // Chair pulled up to the desk, its back to the camera.
+  const chairZ = DESK_Z + ROOM.deskDepth / 2 + 0.36
+  const seat = ROOM.chairSeat
+  parts.push(box(palette.fabric, 0.46, 0.06, 0.44, deskX, seat, chairZ))
+  parts.push(box(palette.fabric, 0.46, 0.5, 0.06, deskX, seat + 0.28, chairZ + 0.2))
+  parts.push(box(palette.charcoal, 0.05, seat - 0.07, 0.05, deskX, 0.04 + (seat - 0.07) / 2, chairZ))
+  parts.push(box(palette.charcoal, 0.46, 0.03, 0.06, deskX, 0.03, chairZ))
+  parts.push(box(palette.charcoal, 0.06, 0.03, 0.46, deskX, 0.03, chairZ))
 
-  const chairZ = deskZ + INTERIOR.deskDepth / 2 + 0.32
-  parts.push(tint(box(0.4, 0.05, 0.4, 0, floorY + INTERIOR.chairSeatHeight, chairZ), COLORS.fabric))
-  parts.push(
-    tint(box(0.4, 0.34, 0.05, 0, floorY + INTERIOR.chairSeatHeight + 0.19, chairZ + 0.18), COLORS.fabric),
-  )
-  parts.push(
-    tint(box(0.07, INTERIOR.chairSeatHeight, 0.07, 0, floorY + INTERIOR.chairSeatHeight / 2, chairZ), COLORS.woodDark),
-  )
+  // The rug takes the plot's roof colour: the one thread from outside in.
+  parts.push(box(identity, ROOM.rugWidth, 0.012, ROOM.rugDepth, 0.35, 0.006, 0.4))
 
-  // Desk lamp.
-  parts.push(tint(box(0.12, 0.02, 0.12, deskWidth / 2 - 0.16, deskTopY + 0.03, deskZ + 0.1), COLORS.brass))
-  parts.push(
-    tint(box(0.02, INTERIOR.lampHeight, 0.02, deskWidth / 2 - 0.16, deskTopY + INTERIOR.lampHeight / 2, deskZ + 0.1), COLORS.brass),
-  )
-  const shade = new CylinderGeometry(0.04, 0.09, 0.09, 10)
-  shade.translate(deskWidth / 2 - 0.16, deskTopY + INTERIOR.lampHeight, deskZ + 0.1)
-  parts.push(tint(shade, COLORS.brass))
-
-  // Shelf on the right-hand wall, carrying one labelled block per stack item.
-  const shelfX = width / 2 - 0.12
-  const shelfItems = plot.interior.shelfItems
-  const boards = isAbout
-    ? [INTERIOR.shelfLowerY, INTERIOR.shelfUpperY, INTERIOR.shelfUpperY + 0.34]
-    : [INTERIOR.shelfLowerY, INTERIOR.shelfUpperY]
-  for (const boardY of boards) {
-    parts.push(
-      tint(box(0.22, INTERIOR.shelfBoardThickness, INTERIOR.shelfWidth, shelfX, floorY + boardY, 0), COLORS.wood),
-    )
+  // Plant in the open front corner, clear of both wall zones.
+  const plantX = -1.75
+  const plantZ = 1.35
+  const pot = new CylinderGeometry(0.17, 0.13, 0.32, 12)
+  pot.translate(plantX, 0.16, plantZ)
+  parts.push(tint(pot, palette.pot))
+  const soil = new CylinderGeometry(0.155, 0.155, 0.02, 12)
+  soil.translate(plantX, 0.325, plantZ)
+  parts.push(tint(soil, palette.woodDark))
+  for (const [radius, height, y, dx, dz] of [
+    [0.24, 0.52, 0.58, 0, 0],
+    [0.17, 0.4, 0.84, 0.04, -0.03],
+  ]) {
+    const leaves = new ConeGeometry(radius, height, 7)
+    leaves.translate(plantX + dx, y, plantZ + dz)
+    parts.push(tint(leaves, palette.leaf))
   }
 
-  const labelFaces: BufferGeometry[] = []
-  shelfItems.forEach((_item, index) => {
-    const perBoard = Math.ceil(shelfItems.length / 2) || 1
-    const boardY = index < perBoard ? INTERIOR.shelfLowerY : INTERIOR.shelfUpperY
-    const slot = index % perBoard
-    const spacing = INTERIOR.shelfWidth / (perBoard + 1)
-    const z = -INTERIOR.shelfWidth / 2 + spacing * (slot + 1)
-    const y = floorY + boardY + INTERIOR.shelfBoardThickness / 2 + INTERIOR.blockSize / 2
+  // Strip light along the top of the back wall. It takes the window colour,
+  // so it is already the right thing to light up when dusk comes.
+  parts.push(box(palette.windowLit, ROOM.stripLightWidth, 0.05, 0.07, 0.1, H - 0.14, BACK_Z + 0.035))
+  parts.push(box(palette.charcoal, ROOM.stripLightWidth + 0.06, 0.02, 0.09, 0.1, H - 0.105, BACK_Z + 0.045))
 
-    parts.push(
-      tint(box(0.12, INTERIOR.blockSize, INTERIOR.blockSize, shelfX, y, z), COLORS.shelfBlock),
-    )
+  return merge(parts)
+}
 
-    // The label reads off the inward face of the block.
-    const face = new PlaneGeometry(INTERIOR.blockSize, INTERIOR.blockSize)
-    const uv = face.attributes.uv as BufferAttribute
-    for (let vertex = 0; vertex < uv.count; vertex += 1) {
-      uv.setXY(
-        vertex,
-        uv.getX(vertex),
-        (shelfItems.length - 1 - index + uv.getY(vertex)) / shelfItems.length,
-      )
+// ---------------------------------------------------------------------------
+// Placing exhibits. Two wall zones each take one wall or floor object; the
+// desk takes two desk objects. An exhibit that finds its kind of slot full
+// takes whatever is free, so no data can leave one out.
+// ---------------------------------------------------------------------------
+
+type Slot = (geometry: BufferGeometry, mount: Mount) => void
+
+const mountHeight = (mount: Mount) => (mount === 'wall' ? ROOM.wallMountY : 0)
+
+const zoneSlots: Slot[] = [
+  (geometry, mount) => {
+    geometry.translate(ROOM.backZoneX, mountHeight(mount), BACK_Z)
+  },
+  (geometry, mount) => {
+    // Turned to face into the room from the side wall.
+    geometry.rotateY(Math.PI / 2)
+    geometry.translate(SIDE_X, mountHeight(mount), ROOM.sideZoneZ)
+  },
+]
+
+const deskSlots: Slot[] = [-1, 1].map((side) => (geometry) => {
+  geometry.translate(ROOM.deskCentreX + side * ROOM.deskSlotOffset, ROOM.deskHeight, DESK_Z)
+})
+
+function assignSlots(mounts: Mount[]): Slot[] {
+  const zones = [...zoneSlots]
+  const desk = [...deskSlots]
+  return mounts.map((mount) => {
+    const [preferred, other] = mount === 'desk' ? [desk, zones] : [zones, desk]
+    return (preferred.shift() ?? other.shift())!
+  })
+}
+
+// ---------------------------------------------------------------------------
+// The atlas. One texture per room holds every exhibit's surface, which is what
+// lets each exhibit be a single mesh: its plain faces all sample the white
+// fourth cell, so the vertex colour shows through untouched.
+// ---------------------------------------------------------------------------
+
+const ATLAS_CELLS = 2
+const atlasCache = new Map<string, CanvasTexture>()
+
+function cellRect(index: number) {
+  const cell = ROOM.atlasCell
+  const size = cell * ATLAS_CELLS
+  const inset = ROOM.atlasInset
+  const column = index % ATLAS_CELLS
+  const row = Math.floor(index / ATLAS_CELLS)
+  return {
+    u0: (column * cell + inset) / size,
+    u1: ((column + 1) * cell - inset) / size,
+    // Canvas rows run down while V runs up.
+    v0: 1 - ((row + 1) * cell - inset) / size,
+    v1: 1 - (row * cell + inset) / size,
+  }
+}
+
+// Centre of the last cell, which is left plain white.
+const WHITE = cellRect(ATLAS_CELLS * ATLAS_CELLS - 1)
+const WHITE_U = (WHITE.u0 + WHITE.u1) / 2
+const WHITE_V = (WHITE.v0 + WHITE.v1) / 2
+
+function bindToCell(geometry: BufferGeometry, index: number) {
+  const rect = cellRect(index)
+  const uv = geometry.attributes.uv as BufferAttribute
+  for (let vertex = 0; vertex < uv.count; vertex += 1) {
+    const u = uv.getX(vertex)
+    if (u === UNTEXTURED) {
+      uv.setXY(vertex, WHITE_U, WHITE_V)
+    } else {
+      uv.setXY(vertex, rect.u0 + u * (rect.u1 - rect.u0), rect.v0 + uv.getY(vertex) * (rect.v1 - rect.v0))
     }
-    uv.needsUpdate = true
-    face.rotateY(-Math.PI / 2)
-    face.translate(shelfX - 0.061, y, z)
-    labelFaces.push(face)
+  }
+  uv.needsUpdate = true
+}
+
+// Painted once per plot and kept: a surface is redrawn only when the theme
+// changes, never per visit and never per frame.
+function roomAtlas(plot: Plot): CanvasTexture {
+  const cached = atlasCache.get(plot.id)
+  if (cached) return cached
+
+  const cell = ROOM.atlasCell
+  const inset = ROOM.atlasInset
+  const canvas = document.createElement('canvas')
+  canvas.width = cell * ATLAS_CELLS
+  canvas.height = cell * ATLAS_CELLS
+  const context = canvas.getContext('2d')!
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  plot.exhibits.slice(0, MAX_EXHIBITS).forEach((exhibit, index) => {
+    const surface = kitEntry(exhibit.object).surface
+    if (!surface) return
+    context.save()
+    context.translate((index % ATLAS_CELLS) * cell + inset, Math.floor(index / ATLAS_CELLS) * cell + inset)
+    paintSurface(context, surface.kind, cell - inset * 2, surface.aspect, exhibit.labels ?? [])
+    context.restore()
   })
 
-  // Poster on the left-hand wall.
-  const posterX = -width / 2 + 0.06
-  parts.push(
-    tint(
-      box(0.03, INTERIOR.posterHeight + 0.05, INTERIOR.posterWidth + 0.05, posterX, floorY + INTERIOR.posterY, 0),
-      COLORS.woodDark,
-    ),
-  )
-  const poster = new PlaneGeometry(INTERIOR.posterWidth, INTERIOR.posterHeight)
-  poster.rotateY(Math.PI / 2)
-  poster.translate(posterX + 0.02, floorY + INTERIOR.posterY, 0)
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  // Papers on the desk are seen at a grazing angle; without this they smear.
+  texture.anisotropy = 4
+  atlasCache.set(plot.id, texture)
+  return texture
+}
 
-  // Plant in the far corner.
-  const plantX = -width / 2 + 0.26
-  const plantZ = -depth / 2 + 0.26
-  const pot = new CylinderGeometry(INTERIOR.plantPotRadius, INTERIOR.plantPotRadius * 0.8, INTERIOR.plantPotHeight, 10)
-  pot.translate(plantX, floorY + INTERIOR.plantPotHeight / 2, plantZ)
-  parts.push(tint(pot, COLORS.pot))
-  const foliage = new SphereGeometry(0.21, 10, 8)
-  foliage.translate(plantX, floorY + INTERIOR.plantPotHeight + 0.17, plantZ)
-  parts.push(tint(foliage, COLORS.leaf))
+// ---------------------------------------------------------------------------
+// Exhibits and their hover response.
+// ---------------------------------------------------------------------------
 
-  if (isAbout) {
-    // Framed things on the back wall, and something personal in the corner.
-    for (let index = 0; index < 3; index += 1) {
-      parts.push(
-        tint(
-          box(0.26, 0.2, 0.03, -width / 4 + index * 0.34, floorY + 1.05, -depth / 2 + 0.05),
-          COLORS.brass,
-        ),
-      )
+type Rim = { value: number }
+
+// Lambert plus a fresnel term in the accent colour, faint across a face and
+// stronger toward its edges. Every exhibit gets its own material so each can
+// glow alone, but they share one compiled program.
+function exhibitMaterial(map: CanvasTexture): { material: MeshLambertMaterial; rim: Rim } {
+  const rim: Rim = { value: 0 }
+  const rimColour = new Color(ACCENT)
+  const material = new MeshLambertMaterial({ vertexColors: true, map })
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uRim = rim
+    shader.uniforms.uRimColor = { value: rimColour }
+    shader.fragmentShader = `uniform float uRim;\nuniform vec3 uRimColor;\n${shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `float fresnel = pow( 1.0 - saturate( dot( geometryNormal, geometryViewDir ) ), ${ROOM.rimPower.toFixed(2)} );
+      outgoingLight += uRimColor * mix( 0.22, 1.0, fresnel ) * uRim;
+      #include <opaque_fragment>`,
+    )}`
+  }
+  material.customProgramCacheKey = () => 'exhibit-rim'
+
+  return { material, rim }
+}
+
+type BuiltExhibit = {
+  exhibit: Exhibit
+  geometry: BufferGeometry
+  material: MeshLambertMaterial
+  rim: Rim
+  bounds: Box3
+}
+
+function buildExhibits(plot: Plot): BuiltExhibit[] {
+  const atlas = roomAtlas(plot)
+  const exhibits = plot.exhibits.slice(0, MAX_EXHIBITS)
+  const slots = assignSlots(exhibits.map((exhibit) => kitEntry(exhibit.object).mount))
+
+  return exhibits.map((exhibit, index) => {
+    const entry = kitEntry(exhibit.object)
+    const geometry = merge(entry.build())
+    slots[index](geometry, entry.mount)
+    bindToCell(geometry, index)
+    geometry.computeBoundingBox()
+    const { material, rim } = exhibitMaterial(atlas)
+    return { exhibit, geometry, material, rim, bounds: geometry.boundingBox!.clone() }
+  })
+}
+
+function ExhibitMesh({ built }: { built: BuiltExhibit }) {
+  const groupRef = useRef<Group>(null)
+  const level = useRef(0)
+  const releaseTimer = useRef<number | null>(null)
+  const prefersReducedMotion = usePrefersReducedMotion()
+  const setHoveredExhibit = useEstate((state) => state.setHoveredExhibit)
+  const selectExhibit = useEstate((state) => state.selectExhibit)
+  const raycast = useMemo(() => boxRaycast(built.bounds), [built])
+  const id = built.exhibit.id
+
+  const cancelRelease = () => {
+    if (releaseTimer.current !== null) {
+      window.clearTimeout(releaseTimer.current)
+      releaseTimer.current = null
     }
-    const bat = box(0.09, 0.72, 0.05, width / 2 - 0.3, floorY + 0.36, depth / 2 - 0.3)
-    bat.rotateZ(0.18)
-    parts.push(tint(bat, COLORS.wood))
   }
 
-  const screen = new PlaneGeometry(INTERIOR.monitorWidth, INTERIOR.monitorHeight)
-  screen.translate(0, monitorY, deskZ + 0.007)
+  useEffect(() => cancelRelease, [])
 
-  return {
-    furniture: merge(parts),
-    screen,
-    screenTexture: createScreenTexture(plot.interior.monitorContent),
-    poster,
-    posterTexture: createPosterTexture(plot.interior.posterText),
-    labels: labelFaces.length ? merge(labelFaces) : null,
-    labelTexture: labelFaces.length ? createShelfAtlas(shelfItems) : null,
-  }
-}
+  // Read from the store directly rather than subscribing, so hover never
+  // re-renders the room — the response is entirely per-frame.
+  useFrame((_, delta) => {
+    const group = groupRef.current
+    if (!group) return
+    const { hoveredExhibitId, activeExhibitId } = useEstate.getState()
+    const target = hoveredExhibitId === id || activeExhibitId === id ? 1 : 0
+    if (Math.abs(target - level.current) < 0.0005) return
 
-const roomCache = new Map<string, RoomParts>()
-
-function getRoom(plot: Plot, open: OpenParts): RoomParts {
-  let room = roomCache.get(plot.id)
-  if (!room) {
-    room = composeRoom(plot, open)
-    roomCache.set(plot.id, room)
-  }
-  return room
-}
-
-function easeInOut(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-}
-
-const cameraWorld = new Vector3()
-const wallWorld = new Vector3()
-const toCamera = new Vector3()
-const wallNormal = new Vector3()
-
-function OpenBuilding({ plot, progress }: { plot: Plot; progress: { current: number } }) {
-  const open = useMemo(() => getOpenParts(plot), [plot])
-  const room = useMemo(() => getRoom(plot, open), [plot, open])
-  const camera = useThree((state) => state.camera)
-
-  const roofRef = useRef<Group>(null)
-  const roomRef = useRef<Group>(null)
-  const wallRefs = useRef<(Mesh | null)[]>([])
-
-  // Always transparent with depth writing off. Toggling either would recompile
-  // the shader mid-reveal, and depth testing alone keeps far walls behind the
-  // furniture while near walls blend over it.
-  const wallMaterials = useMemo(
-    () =>
-      open.walls.map(
-        () =>
-          new MeshLambertMaterial({
-            vertexColors: true,
-            transparent: true,
-            depthWrite: false,
-            opacity: 1,
-          }),
-      ),
-    [open.walls],
-  )
-
-  useEffect(() => () => wallMaterials.forEach((material) => material.dispose()), [wallMaterials])
-
-  useFrame(() => {
-    const t = progress.current
-    const roofT = easeInOut(Math.min(t / REVEAL.roofSpan, 1))
-    const wallT = easeInOut(Math.max(0, Math.min((t - REVEAL.wallDelay) / REVEAL.wallSpan, 1)))
-
-    if (roofRef.current) {
-      roofRef.current.position.y = roofT * REVEAL.roofLift
-      roofRef.current.position.z = roofT * REVEAL.roofDrift
-    }
-    if (roomRef.current) roomRef.current.visible = wallT > 0.01
-
-    camera.getWorldPosition(cameraWorld)
-
-    open.walls.forEach((wall, index) => {
-      const mesh = wallRefs.current[index]
-      if (!mesh) return
-      mesh.getWorldPosition(wallWorld)
-      wallNormal.copy(wall.normal).transformDirection(mesh.matrixWorld)
-      toCamera.copy(cameraWorld).sub(wallWorld).normalize()
-
-      // Saturates well before head-on, because a three-quarter view meets both
-      // near walls at an angle and half-fading each of them hides the room.
-      // Walls turned away, or seen edge-on, still stay solid.
-      const dot = wallNormal.dot(toCamera)
-      const facing = Math.min(1, Math.max(0, dot) / REVEAL.wallFadeThreshold)
-      wallMaterials[index].opacity = 1 - (1 - REVEAL.wallMinOpacity) * facing * wallT
-    })
+    const blend = prefersReducedMotion ? 1 : 1 - Math.pow(ROOM.hoverDecay, Math.min(delta, 0.05))
+    level.current += (target - level.current) * blend
+    group.position.y = ROOM.exhibitLift * level.current
+    built.rim.value = ROOM.rimStrength * level.current
   })
 
   return (
-    <group position={plot.position} rotation={[0, plot.rotation, 0]}>
-      <mesh geometry={open.body} material={roomMaterial} castShadow receiveShadow raycast={() => null} />
-      <mesh geometry={open.floor} material={roomMaterial} receiveShadow castShadow={false} raycast={() => null} />
+    <group ref={groupRef}>
+      <mesh
+        geometry={built.geometry}
+        material={built.material}
+        castShadow
+        receiveShadow
+        raycast={raycast}
+        onPointerOver={(event) => {
+          event.stopPropagation()
+          cancelRelease()
+          setHoveredExhibit(id)
+        }}
+        onPointerOut={() => {
+          cancelRelease()
+          releaseTimer.current = window.setTimeout(() => {
+            releaseTimer.current = null
+            if (useEstate.getState().hoveredExhibitId === id) setHoveredExhibit(null)
+          }, ROOM.hoverReleaseMs)
+        }}
+        onClick={(event) => {
+          if (event.delta > UI.dragThresholdPx) return
+          event.stopPropagation()
+          selectExhibit(id)
+        }}
+      />
+    </group>
+  )
+}
 
-      {/* The roof stops casting once it is off, otherwise it drops its own
-          shadow straight onto the room it just uncovered. */}
-      <group ref={roofRef}>
-        <mesh geometry={open.roof} material={roomMaterial} castShadow={false} receiveShadow raycast={() => null} />
-      </group>
+function Room({ plot }: { plot: Plot }) {
+  const built = useMemo(() => ({ shell: buildShell(plot), exhibits: buildExhibits(plot) }), [plot])
+  const clearExhibit = useEstate((state) => state.clearExhibit)
 
-      {open.walls.map((wall, index) => (
-        <mesh
-          key={index}
-          ref={(mesh) => {
-            wallRefs.current[index] = mesh
-          }}
-          geometry={wall.geometry}
-          material={wallMaterials[index]}
-          renderOrder={2}
-          castShadow={false}
-          receiveShadow={false}
-          raycast={() => null}
-        />
+  // The atlas is kept for the next visit; everything else goes.
+  useEffect(
+    () => () => {
+      built.shell.dispose()
+      for (const exhibit of built.exhibits) {
+        exhibit.geometry.dispose()
+        exhibit.material.dispose()
+      }
+    },
+    [built],
+  )
+
+  return (
+    <group position={[0, PAD_TOP + ROOM.floorLift, 0]} scale={roomScale(plot)}>
+      <mesh
+        geometry={built.shell}
+        material={shellMaterial}
+        castShadow
+        receiveShadow
+        // The shell blocks the pointer, so nothing behind the room reacts to
+        // it; a click on anything that isn't an exhibit steps back out of one.
+        onPointerOver={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          if (event.delta > UI.dragThresholdPx) return
+          event.stopPropagation()
+          if (useEstate.getState().activeExhibitId) clearExhibit()
+        }}
+      />
+      {built.exhibits.map((exhibit) => (
+        <ExhibitMesh key={exhibit.exhibit.id} built={exhibit} />
       ))}
-
-      <group ref={roomRef}>
-        <mesh geometry={room.furniture} material={roomMaterial} castShadow receiveShadow raycast={() => null} />
-        <mesh geometry={room.screen} raycast={() => null}>
-          <meshBasicMaterial map={room.screenTexture} />
-        </mesh>
-        <mesh geometry={room.poster} raycast={() => null}>
-          <meshBasicMaterial map={room.posterTexture} />
-        </mesh>
-        {room.labels && room.labelTexture && (
-          <mesh geometry={room.labels} raycast={() => null}>
-            <meshBasicMaterial map={room.labelTexture} />
-          </mesh>
-        )}
-      </group>
     </group>
   )
 }
 
 export function Interiors() {
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
-  const openPlotId = useEstate((state) => state.openPlotId)
-  const setOpenPlot = useEstate((state) => state.setOpenPlot)
-  const prefersReducedMotion = usePrefersReducedMotion()
+  const plot = selectedPlotId ? plots.find((entry) => entry.id === selectedPlotId) : null
+  if (!plot || plot.exhibits.length === 0) return null
 
-  const progress = useRef(0)
-  const target = useRef(0)
-
-  useEffect(() => {
-    if (selectedPlotId) {
-      setOpenPlot(selectedPlotId)
-      target.current = 1
-      // Reduced motion skips the sequence: the roof is simply already off.
-      if (prefersReducedMotion) progress.current = 1
-      return
-    }
-
-    target.current = 0
-    if (prefersReducedMotion) {
-      progress.current = 0
-      setOpenPlot(null)
-      return
-    }
-
-    // Kept mounted until the closing sequence has finished playing.
-    const timer = window.setTimeout(() => setOpenPlot(null), REVEAL.durationSeconds * 1000)
-    return () => window.clearTimeout(timer)
-  }, [selectedPlotId, prefersReducedMotion, setOpenPlot])
-
-  useFrame((_, delta) => {
-    if (prefersReducedMotion) return
-    const step = Math.min(delta, 0.05) / REVEAL.durationSeconds
-    const next = Math.max(0, Math.min(1, progress.current + (target.current === 1 ? step : -step)))
-    progress.current = next
-  })
-
-  const plot = openPlotId ? plots.find((entry) => entry.id === openPlotId) : null
-  if (!plot) return null
-
-  return <OpenBuilding plot={plot} progress={progress} />
+  // Keyed by plot, so moving between rooms tears the old one down completely.
+  return (
+    <group position={plot.position} rotation={[0, plot.rotation, 0]}>
+      <Room key={plot.id} plot={plot} />
+    </group>
+  )
 }

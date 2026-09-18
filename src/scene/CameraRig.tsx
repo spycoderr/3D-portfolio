@@ -5,8 +5,9 @@ import { Spherical, Vector3 } from 'three'
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer, useIsMobile } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
-import { useEstate, type CameraMode } from '@/store/useEstate'
-import { BUILDING, CAMERA, FOCUS } from './constants'
+import { useEstate } from '@/store/useEstate'
+import { CAMERA, FOCUS, ROOM } from './constants'
+import { PAD_TOP, roomScale } from './room'
 
 type Controls = ComponentRef<typeof OrbitControls>
 
@@ -52,45 +53,36 @@ function overviewPose(): Pose {
   }
 }
 
-function plotPose(plot: Plot, mode: CameraMode, isMobile: boolean): Pose {
+// Frames the plot's room from the quarter its two missing walls face. Every
+// value derives from the room's own scaled size, so no plot needs a
+// hand-placed camera.
+function plotPose(plot: Plot, exhibitOpen: boolean, isMobile: boolean): Pose {
   const base = new Vector3(...plot.position)
-  const interior = mode === 'interior'
+  const scale = roomScale(plot)
+  const shifted = exhibitOpen && !isMobile
+  const distance =
+    (Math.max(ROOM.width, ROOM.depth) * scale * FOCUS.roomDistanceScale) /
+    (shifted ? FOCUS.exhibitRoomScale : 1)
 
-  // Framing follows the building's largest dimension, height included. Using
-  // the footprint alone pulled the camera far too close to tall plots.
-  const height = plot.floors * BUILDING.floorHeight + BUILDING.roofHeight
-  const size = Math.max(plot.footprint.w, plot.footprint.d, height)
-
-  let distance = size * FOCUS.distanceScale
-  if (interior) distance *= FOCUS.interiorDistanceFactor
-  const elevation = interior ? FOCUS.interiorElevation : FOCUS.elevation
-
-  // Buildings face the estate centre, so the camera belongs on the inward side,
-  // out over the road where a visitor would stand to see the front door. Taken
-  // from position rather than the stored rotation so it stays correct whenever
-  // plots are moved.
+  // Buildings face the estate centre and the room's open sides face the same
+  // way, swung by the azimuth offset. Taken from position rather than stored
+  // rotation so it stays right if plots move.
   const outward = base.clone().setY(0)
   if (outward.lengthSq() === 0) outward.set(0, 0, 1)
   outward.normalize()
   const azimuth = Math.atan2(-outward.x, -outward.z) + FOCUS.azimuthOffset
 
-  // Aim at the top storey, which is the one that opens up into the room.
-  const roomY =
-    BUILDING.padBaseY +
-    BUILDING.padHeight +
-    (plot.floors - 1) * BUILDING.floorHeight +
-    BUILDING.floorHeight * FOCUS.targetHeightFactor
-  const target = new Vector3(base.x, roomY, base.z)
-
-  const horizontal = Math.cos(elevation) * distance
+  const target = new Vector3(base.x, PAD_TOP + ROOM.height * scale * FOCUS.targetHeightFactor, base.z)
+  const horizontal = Math.cos(FOCUS.elevation) * distance
   const position = new Vector3(
     target.x + Math.sin(azimuth) * horizontal,
-    target.y + Math.sin(elevation) * distance,
+    target.y + Math.sin(FOCUS.elevation) * distance,
     target.z + Math.cos(azimuth) * horizontal,
   )
 
-  // Move the look-at point right so the building sits clear of the detail panel.
-  if (!isMobile && !interior) {
+  // With an exhibit's panel open on the right, move the look-at point right so
+  // the room sits clear of it. On mobile the panel is a bottom sheet instead.
+  if (shifted) {
     const view = target.clone().sub(position).setY(0).normalize()
     target.addScaledVector(new Vector3(-view.z, 0, view.x), distance * FOCUS.panelShiftFactor)
   }
@@ -105,6 +97,7 @@ export function CameraRig() {
 
   const mode = useEstate((state) => state.mode)
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
+  const activeExhibitId = useEstate((state) => state.activeExhibitId)
   const hasEngaged = useEstate((state) => state.hasEngaged)
   const engage = useEstate((state) => state.engage)
 
@@ -167,7 +160,7 @@ export function CameraRig() {
     if (!controls) return
 
     const plot = selectedPlotId ? (plots.find((p) => p.id === selectedPlotId) ?? null) : null
-    const pose = mode === 'overview' || !plot ? overviewPose() : plotPose(plot, mode, isMobile)
+    const pose = mode === 'overview' || !plot ? overviewPose() : plotPose(plot, activeExhibitId !== null, isMobile)
     const radius = pose.position.distanceTo(pose.target)
 
     // Applied before the next frame, so update() never clamps the new pose to
@@ -175,14 +168,16 @@ export function CameraRig() {
     limits.current = {
       min: mode === 'overview' ? CAMERA.minDistance : radius * FOCUS.minDistanceFactor,
       max: mode === 'overview' ? CAMERA.maxDistance : radius * FOCUS.maxDistanceFactor,
+      // A cutaway only reads from the side its missing walls face, so inside a
+      // room the orbit is held to an arc around that side.
       azimuth:
-        mode === 'interior'
+        mode === 'focused'
           ? {
               center: Math.atan2(
                 pose.position.x - pose.target.x,
                 pose.position.z - pose.target.z,
               ),
-              arc: FOCUS.interiorAzimuthArc,
+              arc: FOCUS.roomAzimuthArc,
             }
           : null,
     }
@@ -242,7 +237,7 @@ export function CameraRig() {
       setFlying(false)
     }, CAMERA.transitionDuration * 1000)
     return () => window.clearTimeout(timer)
-  }, [mode, selectedPlotId, isMobile, prefersReducedMotion, camera])
+  }, [mode, selectedPlotId, activeExhibitId, isMobile, prefersReducedMotion, camera])
 
   useFrame((_, delta) => {
     const controls = controlsRef.current

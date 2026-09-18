@@ -86,22 +86,25 @@ export function Estate() {
   const prefersReducedMotion = usePrefersReducedMotion()
   const hasEngaged = useEstate((state) => state.hasEngaged)
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
-  const clearSelection = useEstate((state) => state.clearSelection)
+  const hoveredExhibitId = useEstate((state) => state.hoveredExhibitId)
+  const back = useEstate((state) => state.back)
+  const clearExhibit = useEstate((state) => state.clearExhibit)
   const rendering = useRenderGate(container)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') clearSelection()
+      // One level at a time: an exhibit closes to its room, a room to the campus.
+      if (event.key === 'Escape') back()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [clearSelection])
+  }, [back])
 
   return (
     <div
       ref={setContainer}
       className="relative h-full w-full bg-sky"
-      style={{ cursor: hoveredPlotId ? 'pointer' : 'default' }}
+      style={{ cursor: hoveredPlotId || hoveredExhibitId ? 'pointer' : 'default' }}
     >
       <div
         className="h-full w-full transition-opacity ease-out"
@@ -115,6 +118,11 @@ export function Estate() {
           dpr={[1, PERF.maxPixelRatio]}
           frameloop={rendering ? 'always' : 'never'}
           onCreated={(state) => state.setDpr(pixelRatioFor(state.gl))}
+          // A click that lands on nothing interactive closes an open exhibit.
+          // r3f only reports a miss for a click, never for the end of a drag.
+          onPointerMissed={() => {
+            if (useEstate.getState().activeExhibitId) clearExhibit()
+          }}
           gl={{ antialias: true, powerPreference: 'high-performance' }}
           camera={{
             fov: CAMERA.fov,

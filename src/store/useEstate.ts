@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 
-export type CameraMode = 'overview' | 'focused' | 'interior'
+// Overview is the campus; focused is inside a plot's room. An open exhibit is
+// a third level layered on focused rather than a separate mode, because the
+// camera stays in the same room — only the panel and framing change.
+export type CameraMode = 'overview' | 'focused'
 
 type EstateState = {
   mode: CameraMode
@@ -9,38 +12,56 @@ type EstateState = {
   // the wheel scrolls the page and a touch swipe scrolls it too.
   hasEngaged: boolean
   hoveredPlotId: string | null
-  // The plot whose interior is on screen. It outlives the selection, because
-  // the building has to stay open while the closing sequence plays out.
-  openPlotId: string | null
+  // The exhibit whose panel is open. Only meaningful inside the selected plot.
+  activeExhibitId: string | null
+  // One field for both the object in the room and its entry in the list, which
+  // is what makes hovering either one light up the other.
+  hoveredExhibitId: string | null
   engage: () => void
   setHovered: (id: string | null) => void
-  setOpenPlot: (id: string | null) => void
   selectPlot: (id: string) => void
   clearSelection: () => void
-  enterInterior: () => void
-  exitInterior: () => void
+  setHoveredExhibit: (id: string | null) => void
+  selectExhibit: (id: string) => void
+  clearExhibit: () => void
+  // Steps back exactly one level: exhibit to room, room to campus.
+  back: () => void
 }
 
-export const useEstate = create<EstateState>()((set) => ({
+export const useEstate = create<EstateState>()((set, get) => ({
   mode: 'overview',
   selectedPlotId: null,
   hasEngaged: false,
   hoveredPlotId: null,
-  openPlotId: null,
+  activeExhibitId: null,
+  hoveredExhibitId: null,
 
   engage: () => set({ hasEngaged: true }),
 
   setHovered: (id) => set({ hoveredPlotId: id }),
 
-  setOpenPlot: (id) => set({ openPlotId: id }),
+  // Entering a room never carries an exhibit over from the last one.
+  selectPlot: (id) =>
+    set({
+      mode: 'focused',
+      selectedPlotId: id,
+      hasEngaged: true,
+      activeExhibitId: null,
+      hoveredExhibitId: null,
+    }),
 
-  selectPlot: (id) => set({ mode: 'focused', selectedPlotId: id, hasEngaged: true }),
+  clearSelection: () =>
+    set({ mode: 'overview', selectedPlotId: null, activeExhibitId: null, hoveredExhibitId: null }),
 
-  clearSelection: () => set({ mode: 'overview', selectedPlotId: null }),
+  setHoveredExhibit: (id) => set({ hoveredExhibitId: id }),
 
-  enterInterior: () =>
-    set((state) => (state.selectedPlotId ? { mode: 'interior' } : state)),
+  selectExhibit: (id) => set((state) => (state.selectedPlotId ? { activeExhibitId: id } : state)),
 
-  exitInterior: () =>
-    set((state) => (state.mode === 'interior' ? { mode: 'focused' } : state)),
+  clearExhibit: () => set({ activeExhibitId: null }),
+
+  back: () => {
+    const { activeExhibitId, selectedPlotId, clearExhibit, clearSelection } = get()
+    if (activeExhibitId) clearExhibit()
+    else if (selectedPlotId) clearSelection()
+  },
 }))

@@ -112,18 +112,23 @@ export const CAMERA = {
 // How the camera frames a selected plot. Every value is derived from the plot's
 // own geometry, so no building ever needs a hand-placed camera.
 export const FOCUS = {
-  distanceScale: 2.8,
+  // Distance as a multiple of the room's larger floor dimension.
+  roomDistanceScale: 2.0,
   elevation: 0.62,
-  // Swings off the radial axis so two faces of the building are visible.
+  // Swings off the radial axis toward the room's open corner. The room builds
+  // its walls on the far two sides, so this sign and the walls must agree.
   azimuthOffset: 0.6,
-  targetHeightFactor: 0.55,
-  // Pushes the look-at point right so the building sits clear of the panel.
-  panelShiftFactor: 0.22,
+  // Look-at height as a fraction of the room's height.
+  targetHeightFactor: 0.38,
+  // With an exhibit's panel open the room moves left and reads smaller, so it
+  // stays whole in the space the panel leaves: the look-at point shifts right
+  // and the camera pulls back by the inverse of the room's apparent scale.
+  panelShiftFactor: 0.3,
+  exhibitRoomScale: 0.8,
   minDistanceFactor: 0.6,
   maxDistanceFactor: 1.8,
-  interiorDistanceFactor: 0.42,
-  interiorElevation: 0.3,
-  interiorAzimuthArc: 0.5,
+  // Half-width, in radians, of the orbit allowed inside a room.
+  roomAzimuthArc: 0.55,
 } as const
 
 // Lighting
@@ -318,48 +323,63 @@ export const PERF = {
   lowTierMemoryGb: 4,
 } as const
 
-// Opening a building: the roof leads, the near walls follow, and the whole
-// sequence is one orchestrated move rather than two independent tweens.
-export const REVEAL = {
-  durationSeconds: 0.9,
-  // Fractions of the sequence. The roof starts immediately and the walls a
-  // beat later, both finishing together.
-  roofSpan: 0.833,
-  wallDelay: 0.167,
-  wallSpan: 0.833,
-  roofLift: 1.15,
-  roofDrift: 0.12,
-  // Walls facing the camera thin out to this; walls edge-on stay solid.
-  wallMinOpacity: 0.08,
-  // Dot product at which a wall is treated as fully facing the camera.
-  wallFadeThreshold: 0.42,
-  wallThickness: 0.12,
-} as const
+// The cutaway room a building opens into. Designed once at this canonical
+// size, then scaled uniformly to fit inside each plot's footprint — so one
+// layout serves every plot, and the nameplate and ground label outside the
+// footprint keep their places. Origin is the centre of the floor's top face.
+// The back wall runs along -z and the side wall along -x; the other two sides
+// are open, facing the quarter the camera arrives from.
+export const ROOM = {
+  width: 4.4,
+  depth: 3.6,
+  height: 2.1,
+  wallThickness: 0.1,
+  floorThickness: 0.08,
+  // World units the floor's top face stands above the plot pad. Without it the
+  // two are coplanar and the pad shows through the boards.
+  floorLift: 0.02,
+  skirtingHeight: 0.09,
+  skirtingDepth: 0.025,
+  // Fraction of the footprint the room may fill.
+  footprintFill: 0.97,
 
-// The furnished room inside the top storey, in units relative to that storey.
-export const INTERIOR = {
-  floorThickness: 0.06,
-  deskHeight: 0.44,
-  deskWidth: 1.15,
-  deskDepth: 0.5,
+  deskWidth: 1.8,
+  deskDepth: 0.62,
+  deskHeight: 0.74,
   deskTopThickness: 0.05,
-  chairSeatHeight: 0.25,
-  monitorWidth: 0.52,
-  monitorHeight: 0.34,
-  monitorStandHeight: 0.1,
-  shelfWidth: 0.95,
-  shelfBoardThickness: 0.04,
-  shelfLowerY: 0.62,
-  shelfUpperY: 0.98,
-  blockSize: 0.14,
-  posterWidth: 0.62,
-  posterHeight: 0.42,
-  posterY: 0.95,
-  rugWidth: 1.25,
-  rugDepth: 0.95,
-  plantPotRadius: 0.13,
-  plantPotHeight: 0.17,
-  lampHeight: 0.3,
+  deskCentreX: 1.0,
+  // Two places on the desk, either side of centre.
+  deskSlotOffset: 0.45,
+  chairSeat: 0.46,
+
+  // Wall-mounted exhibits hang with their centre at this height.
+  wallMountY: 1.3,
+  // The back-left zone and the side-wall zone each take one wall or one
+  // floor-standing exhibit. Kept apart so neither can reach into the corner
+  // the other occupies.
+  backZoneX: -0.8,
+  sideZoneZ: 0.2,
+
+  doorWidth: 0.62,
+  doorHeight: 1.6,
+  // Toward the back of the side wall, clear of the side-wall exhibit zone.
+  doorCentreZ: -1.2,
+
+  rugWidth: 2.2,
+  rugDepth: 1.6,
+  stripLightWidth: 3.4,
+
+  // Hover: lift in canonical room units, and how fast it settles.
+  exhibitLift: 0.08,
+  hoverDecay: 0.0004,
+  rimStrength: 0.55,
+  rimPower: 1.6,
+  hoverReleaseMs: 60,
+
+  // Surfaces for all three exhibits share one atlas per room; the fourth cell
+  // is plain white, which is where every untextured face samples.
+  atlasCell: 256,
+  atlasInset: 8,
 } as const
 
 // Character props: the details that stop six boxes reading as six boxes. All

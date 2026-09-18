@@ -23,18 +23,17 @@ import {
   Object3D,
   PlaneGeometry,
   Quaternion,
-  Ray,
-  Raycaster,
   SRGBColorSpace,
   Vector3,
-  type Intersection,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer } from '@/hooks/useIsMobile'
 import { useEstate } from '@/store/useEstate'
 import { palette } from '@/theme'
-import { BUILDING, BUILDING_PROPS, CAMERA, COLORS, INTERIOR, REVEAL, UI } from './constants'
+import { BUILDING, BUILDING_PROPS, CAMERA, COLORS, UI } from './constants'
+import { boxRaycast } from './raycast'
+import { PAD_TOP } from './room'
 
 // One material per colour, shared by every building that uses it.
 const materialCache = new Map<string, MeshLambertMaterial>()
@@ -145,12 +144,7 @@ type BuildingParts = {
   pad: BufferGeometry
   shell: BufferGeometry
   windows: Matrix4[]
-  // Index of the first top-storey window, so an opened building can hide the
-  // ones that would otherwise hang in mid-air on a faded wall.
-  topStoreyWindowStart: number
 }
-
-const PAD_TOP = BUILDING.padBaseY + BUILDING.padHeight
 
 // Plots name their colours; the theme decides what those names are.
 function colours(plot: Plot) {
@@ -339,17 +333,14 @@ function hedge(plot: Plot): BufferGeometry[] {
   ]
 }
 
-// Storeys, door and wall-mounted props. The open variant leaves the top storey
-// out, because it gets rebuilt as four separate walls that can fade.
-function bodyParts(plot: Plot, includeTopStorey: boolean): BufferGeometry[] {
+// Storeys, door, and every prop that is not on the roof.
+function bodyParts(plot: Plot): BufferGeometry[] {
   const walls: BufferGeometry[] = []
   const accent: BufferGeometry[] = []
   const trim: BufferGeometry[] = []
 
   const { d } = plot.footprint
-  const storeys = includeTopStorey ? plot.floors : plot.floors - 1
-
-  for (let storey = 0; storey < storeys; storey += 1) {
+  for (let storey = 0; storey < plot.floors; storey += 1) {
     const size = storeySize(plot, storey)
     const centreY = PAD_TOP + storey * BUILDING.floorHeight + BUILDING.floorHeight / 2
     walls.push(box(size.w, BUILDING.floorHeight, size.d, 0, centreY, 0))
@@ -433,7 +424,6 @@ function bodyParts(plot: Plot, includeTopStorey: boolean): BufferGeometry[] {
 function composeBuilding(plot: Plot): BuildingParts {
   const windows: Matrix4[] = []
   const { w, d } = plot.footprint
-  let topStoreyWindowStart = 0
 
   // Window grid, derived from each storey's own face widths.
   const rotation = new Euler()
@@ -442,8 +432,6 @@ function composeBuilding(plot: Plot): BuildingParts {
   const scale = new Vector3(1, 1, 1)
 
   for (let storey = 0; storey < plot.floors; storey += 1) {
-    if (storey === plot.floors - 1) topStoreyWindowStart = windows.length
-
     const size = storeySize(plot, storey)
     const centreY =
       PAD_TOP + storey * BUILDING.floorHeight + BUILDING.windowSillHeight + BUILDING.windowHeight / 2
@@ -483,73 +471,10 @@ function composeBuilding(plot: Plot): BuildingParts {
       BUILDING.padBaseY + BUILDING.padHeight / 2,
       0,
     ),
-    shell: mergeParts([...bodyParts(plot, true), roofAssembly(plot)]),
+    shell: mergeParts([...bodyParts(plot), roofAssembly(plot)]),
     windows,
-    topStoreyWindowStart,
   }
 }
-
-export type OpenParts = {
-  body: BufferGeometry
-  roof: BufferGeometry
-  floor: BufferGeometry
-  // One per face, in the order front, back, right, left, with the outward
-  // normal each one faces so the fade can follow the camera.
-  walls: { geometry: BufferGeometry; normal: Vector3 }[]
-  roomWidth: number
-  roomDepth: number
-  roomFloorY: number
-}
-
-// Built only for the plot being opened, never for all six at once.
-function composeOpenParts(plot: Plot): OpenParts {
-  const top = storeySize(plot, plot.floors - 1)
-  const baseY = PAD_TOP + (plot.floors - 1) * BUILDING.floorHeight
-  const height = BUILDING.floorHeight
-  const t = REVEAL.wallThickness
-
-  const wall = (
-    width: number,
-    depth: number,
-    x: number,
-    z: number,
-    normal: Vector3,
-  ) => ({
-    geometry: tint(box(width, height, depth, x, baseY + height / 2, z), colours(plot).wall),
-    normal,
-  })
-
-  return {
-    body: mergeParts(bodyParts(plot, false)),
-    roof: roofAssembly(plot),
-    // Boards, not the near-black trim colour, or the room reads as a dark pit.
-    floor: tint(
-      box(top.w, INTERIOR.floorThickness, top.d, 0, baseY + INTERIOR.floorThickness / 2, 0),
-      COLORS.wood,
-    ),
-    walls: [
-      wall(top.w, t, 0, top.d / 2 - t / 2, new Vector3(0, 0, 1)),
-      wall(top.w, t, 0, -top.d / 2 + t / 2, new Vector3(0, 0, -1)),
-      wall(t, top.d - t * 2, top.w / 2 - t / 2, 0, new Vector3(1, 0, 0)),
-      wall(t, top.d - t * 2, -top.w / 2 + t / 2, 0, new Vector3(-1, 0, 0)),
-    ],
-    roomWidth: top.w - t * 2,
-    roomDepth: top.d - t * 2,
-    roomFloorY: baseY + INTERIOR.floorThickness,
-  }
-}
-
-const openPartsCache = new Map<string, OpenParts>()
-
-export function getOpenParts(plot: Plot): OpenParts {
-  let parts = openPartsCache.get(plot.id)
-  if (!parts) {
-    parts = composeOpenParts(plot)
-    openPartsCache.set(plot.id, parts)
-  }
-  return parts
-}
-
 
 // Composed once per plot: the geometry is reused by both the building group and
 // the shared window mesh, which would otherwise each build their own copy.
@@ -597,26 +522,8 @@ function getWindowGeometry(): BufferGeometry {
 
 const windowMaterials = [material(COLORS.windowDark), material(COLORS.kerb)]
 
-// Replacing the shell's raycast with a single box test means the pointer hits
-// one simple volume per building instead of its walls, roof and props. There is
-// no gap to fall through between details, and nothing extra to draw.
-const rayInverse = new Matrix4()
-const localRay = new Ray()
-const localHit = new Vector3()
-
-function boxRaycast(box: Box3) {
-  return function raycast(this: Object3D, raycaster: Raycaster, intersects: Intersection[]) {
-    rayInverse.copy(this.matrixWorld).invert()
-    localRay.copy(raycaster.ray).applyMatrix4(rayInverse)
-    if (!localRay.intersectBox(box, localHit)) return
-
-    const point = localHit.clone().applyMatrix4(this.matrixWorld)
-    const distance = raycaster.ray.origin.distanceTo(point)
-    if (distance < raycaster.near || distance > raycaster.far) return
-
-    intersects.push({ distance, point, object: this })
-  }
-}
+// Stands in for a raycast when a shell must not catch the pointer at all.
+function noRaycast() {}
 
 function colliderBox(plot: Plot): Box3 {
   const height = PAD_TOP + plot.floors * BUILDING.floorHeight + BUILDING.roofHeight
@@ -643,8 +550,9 @@ function BuildingGroup({
   const isHighlighted = useEstate(
     (state) => state.selectedPlotId === plot.id || state.hoveredPlotId === plot.id,
   )
-  // While open, the split version in Interior.tsx stands in for this one.
-  const isOpen = useEstate((state) => state.openPlotId === plot.id)
+  // While its plot is open, the room in Interior.tsx stands in for this
+  // building, so the shell neither draws nor catches the pointer.
+  const isActive = useEstate((state) => state.selectedPlotId === plot.id)
 
   const releaseTimer = useRef<number | null>(null)
 
@@ -669,12 +577,12 @@ function BuildingGroup({
       {/* Only the building rises on hover; its plot stays put. */}
       <group ref={(group) => onRegister(plot.id, group)}>
       <mesh
-        visible={!isOpen}
+        visible={!isActive}
         geometry={parts.shell}
         material={shellMaterial}
         castShadow
         receiveShadow
-        raycast={raycast}
+        raycast={isActive ? noRaycast : raycast}
         onPointerOver={(event) => {
           event.stopPropagation()
           cancelRelease()
@@ -841,10 +749,9 @@ export function Buildings() {
   // Window transforms are baked into world space once, since the instanced mesh
   // lives outside each building's group. The ranges let a lifted building take
   // its own windows with it without touching anyone else's.
-  const { matrices, ranges, topStoreyRanges } = useMemo(() => {
+  const { matrices, ranges } = useMemo(() => {
     const all: Matrix4[] = []
     const byPlot = new Map<string, [number, number]>()
-    const topStorey = new Map<string, [number, number]>()
     const buildingMatrix = new Matrix4()
     const quaternion = new Quaternion()
     const scale = new Vector3(1, 1, 1)
@@ -858,23 +765,28 @@ export function Buildings() {
         all.push(new Matrix4().multiplyMatrices(buildingMatrix, local))
       }
       byPlot.set(plot.id, [start, all.length - start])
-      topStorey.set(plot.id, [
-        start + parts.topStoreyWindowStart,
-        all.length - (start + parts.topStoreyWindowStart),
-      ])
     }
 
-    return { matrices: all, ranges: byPlot, topStoreyRanges: topStorey }
+    return { matrices: all, ranges: byPlot }
   }, [])
 
   const windowsRef = useRef<InstancedMesh>(null)
   const groups = useRef(new Map<string, Object3D>())
   const lifts = useRef(new Map<string, number>())
-  const hiddenWindows = useRef<string | null>(null)
+  // Whose windows are currently hidden, so a change of room restores the old
+  // building's windows as well as hiding the new one's. Undefined means not
+  // known, which forces the next frame to apply visibility afresh.
+  const hiddenFor = useRef<string | null | undefined>(undefined)
+
+  // The window mesh writes every instance as visible whenever the matrices are
+  // set, so whatever was hidden before has to be hidden again. Runs after the
+  // mesh's own layout effect, because a parent's effects follow its children's.
+  useLayoutEffect(() => {
+    hiddenFor.current = undefined
+  }, [matrices])
 
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
   const selectedPlotId = useEstate((state) => state.selectedPlotId)
-  const openPlotId = useEstate((state) => state.openPlotId)
   const coarsePointer = useCoarsePointer()
 
   const register = useCallback((id: string, group: Object3D | null) => {
@@ -885,61 +797,45 @@ export function Buildings() {
   useFrame((_, delta) => {
     const windows = windowsRef.current
     const smoothing = 1 - Math.pow(UI.hoverLiftDecay, Math.min(delta, CAMERA.maxFrameDelta))
+    const roomChanged = selectedPlotId !== hiddenFor.current
     let windowsMoved = false
 
     for (const plot of buildingPlots) {
-      // Touch has no hover, so a tap goes straight to selected; the selected
-      // building then stays raised so it is clear which one is open.
-      const raised =
-        plot.id !== openPlotId &&
-        (plot.id === selectedPlotId || (!coarsePointer && plot.id === hoveredPlotId))
+      // The open plot's room stands in for its building, so it neither lifts
+      // nor shows windows. Touch has no hover, so nothing else lifts there.
+      const active = plot.id === selectedPlotId
+      const raised = !active && !coarsePointer && plot.id === hoveredPlotId
       const target = raised ? UI.hoverLiftDistance : 0
       const current = lifts.current.get(plot.id) ?? 0
-      if (Math.abs(target - current) < 0.0002) continue
+      const settled = Math.abs(target - current) < 0.0002
+      const visibilityChanged = roomChanged && (active || plot.id === hiddenFor.current)
+      if (settled && !visibilityChanged) continue
 
-      const next = current + (target - current) * smoothing
+      const next = settled ? current : current + (target - current) * smoothing
       lifts.current.set(plot.id, next)
 
       const group = groups.current.get(plot.id)
       if (group) group.position.y = next
 
+      // Visibility is decided here, in the same write as the lift. Hiding in a
+      // separate pass let a settling lift write the windows straight back.
       const range = ranges.get(plot.id)
       if (windows && range) {
         const [start, count] = range
         for (let index = start; index < start + count; index += 1) {
-          liftedMatrix.copy(matrices[index])
-          liftedMatrix.elements[13] += next
-          windows.setMatrixAt(index, liftedMatrix)
+          if (active) {
+            windows.setMatrixAt(index, HIDDEN_MATRIX)
+          } else {
+            liftedMatrix.copy(matrices[index])
+            liftedMatrix.elements[13] += next
+            windows.setMatrixAt(index, liftedMatrix)
+          }
         }
         windowsMoved = true
       }
     }
 
-    // The top storey becomes four fading walls when a building opens, so its
-    // windows would otherwise be left hanging in the air.
-    if (windows && openPlotId !== hiddenWindows.current) {
-      const previous = hiddenWindows.current
-      if (previous) {
-        const range = topStoreyRanges.get(previous)
-        if (range) {
-          for (let index = range[0]; index < range[0] + range[1]; index += 1) {
-            liftedMatrix.copy(matrices[index])
-            windows.setMatrixAt(index, liftedMatrix)
-          }
-        }
-      }
-      if (openPlotId) {
-        const range = topStoreyRanges.get(openPlotId)
-        if (range) {
-          for (let index = range[0]; index < range[0] + range[1]; index += 1) {
-            windows.setMatrixAt(index, HIDDEN_MATRIX)
-          }
-        }
-      }
-      hiddenWindows.current = openPlotId
-      windowsMoved = true
-    }
-
+    hiddenFor.current = selectedPlotId
     if (windowsMoved && windows) windows.instanceMatrix.needsUpdate = true
   })
 
