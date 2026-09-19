@@ -31,8 +31,10 @@ export const profile = {
   timeline: [
     { year: "2024", label: "97th percentile in JEE Mains" },
     { year: "Aug 2024", label: "Started B.Tech at Thapar Institute" },
-    { year: "Sep 2024", label: "Alumni cell coordinator and MLSC web team" },
+    { year: "Sep 2024", label: "MLSC web team" },
     { year: "2025", label: "Registered for GSSoC" },
+    { year: "2025", label: "Winner, Rapid Chess, Chess.com" },
+    { year: "2026", label: "Semifinalist, Flipkart GRID 8.0 Software Development Challenge" },
     { year: "Now", label: "Seeking Application Engineering internships" },
   ],
   stats: [
