@@ -335,7 +335,7 @@ const definitions: PlotDefinition[] = [
     shortName: "About",
     eyebrow: "About · Thapar Institute",
     roomHeadline: "Nilabh, briefly",
-    subhead: "Computer Engineering at Thapar, Batch of 2028.",
+    subhead: "Computer Science and Engineering at Thapar, Batch of 2028.",
     kind: "about",
     tagline: "Who I am",
     summary: profile.about[0],
@@ -349,13 +349,13 @@ const definitions: PlotDefinition[] = [
     props: ['chimney', 'hedge'],
     palette: { wall: 'sand', roof: 'sage', trim: 'ink' },
     exhibits: [
-      exhibit('coursework', 'Coursework', 'bookshelf', 'Computer Engineering, with a 9.00 CGPA so far.', [
-        'I\'m studying for a B.Tech in Computer Engineering at Thapar Institute of Engineering and Technology, from August 2024 to May 2028, with a CGPA of 9.00.',
+      exhibit('coursework', 'Coursework', 'bookshelf', 'Computer Science and Engineering, with a 9.00 CGPA so far.', [
+        'I\'m studying for a B.Tech in Computer Science and Engineering at Thapar Institute of Engineering and Technology, from August 2024 to May 2028, with a CGPA of 9.00.',
         'Coursework so far: Data Structures and Algorithms, Object-Oriented Programming, Operating Systems, Database Management Systems, Computer Networks and Software Engineering.',
       ]),
       exhibit('teams', 'On the web team', 'laptopDesk', 'Building for events, with designers and organisers.', [
         'From September 2024 to March 2025 I was on the web team of the Microsoft Learn Student Chapter, where I built the About Us and Timeline pages for Makethon-7 with designers and event organisers.',
-        'Outside coursework: a semifinalist run at the Flipkart GRID 8.0 Software Development Challenge, and a Rapid chess win on Chess.com.',
+        'Outside coursework: a semifinalist run at the Flipkart GRID 8.0 Software Development Challenge.',
       ]),
       exhibit(
         'numbers',
