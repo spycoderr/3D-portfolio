@@ -87,6 +87,9 @@ export const useEstate = create<EstateState>()((set, get) => ({
       activePlotId: id,
       activeExhibitId: null,
       hoveredExhibitId: null,
+      // The building gives way to its room, so the pointer never leaves it
+      // and its hover would otherwise stay set for the whole visit.
+      hoveredPlotId: null,
       hasInteracted: true,
     }),
 

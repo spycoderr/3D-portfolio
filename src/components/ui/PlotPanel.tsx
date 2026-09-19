@@ -16,9 +16,9 @@ function resolve(key: Key): { plot: Plot; exhibit: Exhibit } | null {
 
 // The exhibit panel, over the estate's column: its right side on desktop, all
 // of it below the controls row on a phone, where the scene is too short to
-// share and the way back out must stay in reach. It outlives the selection by one transition, so closing slides
-// the content out instead of blanking it mid-animation. Closing returns to
-// the room, not to the campus.
+// share and the way back out must stay in reach. It outlives the selection by
+// one transition, so closing slides the content out instead of blanking it
+// mid-animation. Closing returns to the room, not to the campus.
 export function PlotPanel() {
   const activePlotId = useEstate((state) => state.activePlotId)
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
@@ -80,7 +80,9 @@ export function PlotPanel() {
       >
 
         <div className="font-body text-step-0 text-ink/50">
-          {shown.plot.plotNumber} · {shown.plot.title}
+          {shown.plot.plotNumber === shown.plot.title
+            ? shown.plot.title
+            : `${shown.plot.plotNumber} · ${shown.plot.title}`}
         </div>
         <h3
           ref={headingRef}

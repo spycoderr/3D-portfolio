@@ -7,6 +7,7 @@ import { useEstate } from '@/store/useEstate'
 export function HoverLabel({ container }: { container: HTMLElement | null }) {
   const labelRef = useRef<HTMLDivElement>(null)
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
+  const atCampus = useEstate((state) => state.level === 'campus')
   const plot = hoveredPlotId ? plots.find((entry) => entry.id === hoveredPlotId) : null
 
   useEffect(() => {
@@ -25,7 +26,7 @@ export function HoverLabel({ container }: { container: HTMLElement | null }) {
     return () => container.removeEventListener('pointermove', onMove)
   }, [container])
 
-  if (!plot) return null
+  if (!plot || !atCampus) return null
 
   return (
     <div

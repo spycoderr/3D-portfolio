@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { plots } from '@/data/plots'
 import { profile } from '@/data/profile'
@@ -13,6 +13,16 @@ const destinations = [
 ]
 
 const FADE_SECONDS = 0.2
+
+// When the element holding focus is removed or hidden — a list swapped for
+// the next level's, a panel sliding shut — focus falls back to the top of the
+// page. Keyboard users are put back beside where they were instead. Mouse
+// users never notice: this only acts when focus has actually been lost.
+function focusIfLost(target: HTMLElement | null | undefined) {
+  const active = document.activeElement
+  const lost = !active || active === document.body || active.closest('[aria-hidden="true"]') !== null
+  if (target && lost) target.focus({ preventScroll: true })
+}
 
 // Type only: no borders, no backgrounds. The active item takes the accent and
 // a 2px underline that draws in from the left.
@@ -32,7 +42,11 @@ function Entry({ active, children }: { active: boolean; children: ReactNode }) {
 
 const itemClass = 'block py-0.5 text-left font-body text-step-1 text-ink sm:text-step-2'
 
-function Destinations() {
+function Destinations({ returnTo }: { returnTo: RefObject<string | null> }) {
+  const buttons = useRef(new Map<string, HTMLButtonElement>())
+  useEffect(() => {
+    if (returnTo.current) focusIfLost(buttons.current.get(returnTo.current))
+  }, [returnTo])
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)
   const goToPlot = useEstate((state) => state.goToPlot)
   const setHovered = useEstate((state) => state.setHovered)
@@ -43,6 +57,10 @@ function Destinations() {
         {destinations.map((plot) => (
           <li key={plot.id}>
             <button
+              ref={(button) => {
+                if (button) buttons.current.set(plot.id, button)
+                else buttons.current.delete(plot.id)
+              }}
               type="button"
               onClick={() => goToPlot(plot.id)}
               onMouseEnter={() => setHovered(plot.id)}
@@ -74,18 +92,38 @@ function RoomContents({ plotId }: { plotId: string }) {
   const activeExhibitId = useEstate((state) => state.activeExhibitId)
   const setHoveredExhibit = useEstate((state) => state.setHoveredExhibit)
   const goToExhibit = useEstate((state) => state.goToExhibit)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const buttons = useRef(new Map<string, HTMLButtonElement>())
+  const lastExhibit = useRef<string | null>(null)
+
+  useEffect(() => {
+    focusIfLost(headingRef.current)
+  }, [])
+
+  // An exhibit closing hands focus back to its own entry in the list.
+  useEffect(() => {
+    if (activeExhibitId) lastExhibit.current = activeExhibitId
+    else if (lastExhibit.current) focusIfLost(buttons.current.get(lastExhibit.current))
+  }, [activeExhibitId])
+
   if (!plot) return null
 
   return (
     <nav aria-label={`Inside ${plot.title}`}>
       <p className="font-body text-step-0 text-ink/55">{plot.eyebrow}</p>
-      <h2 className="mt-1 font-display text-step-4 leading-tight text-ink">{plot.roomHeadline}</h2>
+      <h2 ref={headingRef} tabIndex={-1} className="mt-1 font-display text-step-4 leading-tight text-ink outline-none">
+        {plot.roomHeadline}
+      </h2>
       <p className="mt-1 max-w-[34ch] font-body text-step-1 text-ink/70">{plot.subhead}</p>
 
       <ul className="mt-4 flex flex-col">
         {plot.exhibits.map((exhibit) => (
           <li key={exhibit.id}>
             <button
+              ref={(button) => {
+                if (button) buttons.current.set(exhibit.id, button)
+                else buttons.current.delete(exhibit.id)
+              }}
               type="button"
               onClick={() => goToExhibit(exhibit.id)}
               onMouseEnter={() => setHoveredExhibit(exhibit.id)}
@@ -110,6 +148,11 @@ function RoomContents({ plotId }: { plotId: string }) {
 // out, then the other comes in, so the two never overlap mid-change.
 export function PlotIndex() {
   const activePlotId = useEstate((state) => state.activePlotId)
+  // The room last visited, so coming back to the campus returns focus to it.
+  const lastPlot = useRef<string | null>(null)
+  useEffect(() => {
+    if (activePlotId) lastPlot.current = activePlotId
+  }, [activePlotId])
 
   return (
     <div className="pointer-events-auto">
@@ -121,7 +164,7 @@ export function PlotIndex() {
           exit={{ opacity: 0 }}
           transition={{ duration: FADE_SECONDS }}
         >
-          {activePlotId ? <RoomContents plotId={activePlotId} /> : <Destinations />}
+          {activePlotId ? <RoomContents plotId={activePlotId} /> : <Destinations returnTo={lastPlot} />}
         </motion.div>
       </AnimatePresence>
     </div>

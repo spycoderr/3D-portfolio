@@ -18,19 +18,6 @@ export type Exhibit = {
   labels?: string[]
 }
 
-// For projects whose details haven't been written yet: honest placeholders
-// rather than invented claims about the work.
-function draft(id: string, name: string, object: ExhibitObject, labels?: string[]): Exhibit {
-  return {
-    id,
-    name,
-    object,
-    labels,
-    claim: 'Placeholder claim. Written in R8.',
-    body: ['Placeholder paragraph. Written in R8.', 'Placeholder paragraph. Written in R8.'],
-  }
-}
-
 function exhibit(
   id: string,
   name: string,
@@ -215,60 +202,6 @@ const definitions: PlotDefinition[] = [
         'LabTrack connects to the tools around it: reports export to Google Sheets through its API, and Nodemailer sends email alerts.',
         'It is tested and shipped like production software, with Jest unit tests, API documentation in Postman, and deployment on Render with CI/CD through GitHub Actions.',
       ]),
-    ],
-  },
-  {
-    id: "finalsay",
-    plotNumber: "Plot 04",
-    title: "FinalSay",
-    shortName: "FinalSay",
-    // Year and wording to be written in R8.
-    eyebrow: "Plot 04",
-    roomHeadline: "Inside FinalSay",
-    subhead: "Placeholder subhead. Written in R8.",
-    kind: "project",
-    tagline: "Document version control and collaboration",
-    summary: "Placeholder summary for FinalSay. To be written in Phase 11.",
-    problem: "Placeholder problem statement. To be written in Phase 11.",
-    highlights: ["Placeholder", "Placeholder", "Placeholder"],
-    stack: ["React", "Node.js", "Git API"],
-    links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 2.8, d: 3.2 },
-    floors: 2,
-    roofStyle: 'hip',
-    props: ['balcony', 'waterTank'],
-    palette: { wall: 'paper', roof: 'plum', trim: 'ink' },
-    exhibits: [
-      draft('drafts', 'Layered notices', 'posterBoard'),
-      draft('signoff', 'Stamp and ledger', 'stampLedger'),
-      draft('history', 'Version tree', 'versionTree'),
-    ],
-  },
-  {
-    id: "wattsense",
-    plotNumber: "Plot 05",
-    title: "WattSense",
-    shortName: "WattSense",
-    // Year and wording to be written in R8.
-    eyebrow: "Plot 05",
-    roomHeadline: "Inside WattSense",
-    subhead: "Placeholder subhead. Written in R8.",
-    kind: "project",
-    tagline: "Real-time energy monitoring",
-    summary: "Placeholder summary for WattSense. To be written in Phase 11.",
-    problem: "Placeholder problem statement. To be written in Phase 11.",
-    highlights: ["Placeholder", "Placeholder", "Placeholder"],
-    stack: ["IoT", "Node.js", "InfluxDB"],
-    links: [{ label: "GitHub", href: "#" }],
-    footprint: { w: 3.7, d: 3.2 },
-    floors: 3,
-    roofStyle: 'terrace',
-    props: ['waterTank', 'dish'],
-    palette: { wall: 'sand', roof: 'charcoal', trim: 'ink' },
-    exhibits: [
-      draft('meters', 'Meter panel', 'meterPanel'),
-      draft('appliances', 'Appliance cluster', 'applianceCluster'),
-      draft('load', 'Load curve', 'lineMonitor'),
     ],
   },
   {
