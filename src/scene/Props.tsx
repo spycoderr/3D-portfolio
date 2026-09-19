@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react'
+import { forwardRef, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import {
   AdditiveBlending,
@@ -510,8 +510,17 @@ const CountedInstances = forwardRef<InstancedMesh, CountedInstancesProps>(functi
   { geometry, material, count, transform, castShadow = true },
   ref,
 ) {
-  const meshRef = useRef<InstancedMesh>(null)
-  useImperativeHandle(ref, () => meshRef.current!, [])
+  const meshRef = useRef<InstancedMesh | null>(null)
+  // Forwards the live mesh whenever it is attached, never a handle captured
+  // once at mount that goes stale if the instance is recreated.
+  const attach = useCallback(
+    (mesh: InstancedMesh | null) => {
+      meshRef.current = mesh
+      if (typeof ref === 'function') ref(mesh)
+      else if (ref) ref.current = mesh
+    },
+    [ref],
+  )
 
   useLayoutEffect(() => {
     const mesh = meshRef.current
@@ -529,7 +538,7 @@ const CountedInstances = forwardRef<InstancedMesh, CountedInstancesProps>(functi
 
   return (
     <instancedMesh
-      ref={meshRef}
+      ref={attach}
       args={[geometry, material, count]}
       castShadow={castShadow}
       receiveShadow={false}

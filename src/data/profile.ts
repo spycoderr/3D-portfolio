@@ -10,9 +10,6 @@ export const profile = {
   leetcode: "https://leetcode.com/u/spycoder07",
   // Served from public/. Linked from the destination list as "My resume".
   resume: "/resume.pdf",
-  // The one-line role under the wordmark.
-  wordmark: "nilabh",
-  roleLine: "computer engineering",
   // Bottom right, beside a small accent dot.
   location: "Patiala, India",
   skills: {

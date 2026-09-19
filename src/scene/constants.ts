@@ -155,11 +155,12 @@ export const FOCUS = {
   azimuthOffset: 0.6,
   // Look-at height as a fraction of the room's height.
   targetHeightFactor: 0.38,
-  // With an exhibit's panel open the room moves left and reads smaller, so it
-  // stays whole in the space the panel leaves: the look-at point shifts right
-  // and the camera pulls back by the inverse of the room's apparent scale.
-  panelShiftFactor: 0.3,
-  exhibitRoomScale: 0.8,
+  // With an exhibit's panel open on desktop, the room is framed in the strip
+  // the panel leaves. panelFraction is the share of the scene's width the
+  // panel covers, and must match PlotPanel's own width; exhibitFill is how
+  // much of the remaining strip the room spans.
+  panelFraction: 0.55,
+  exhibitFill: 0.72,
   minDistanceFactor: 0.6,
   maxDistanceFactor: 1.8,
   // Half-width, in radians, of the orbit allowed inside a room.

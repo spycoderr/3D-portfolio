@@ -30,7 +30,7 @@ function Entry({ active, children }: { active: boolean; children: ReactNode }) {
   )
 }
 
-const itemClass = 'block py-0.5 text-left font-body text-step-1 text-ink sm:py-1 sm:text-step-2'
+const itemClass = 'block py-0.5 text-left font-body text-step-1 text-ink sm:text-step-2'
 
 function Destinations() {
   const hoveredPlotId = useEstate((state) => state.hoveredPlotId)

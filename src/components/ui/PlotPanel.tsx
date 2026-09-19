@@ -14,8 +14,9 @@ function resolve(key: Key): { plot: Plot; exhibit: Exhibit } | null {
   return plot && exhibit ? { plot, exhibit } : null
 }
 
-// The exhibit panel: the right half of the screen on desktop, a bottom sheet
-// on a phone. It outlives the selection by one transition, so closing slides
+// The exhibit panel, over the estate's column: its right side on desktop, all
+// of it below the controls row on a phone, where the scene is too short to
+// share and the way back out must stay in reach. It outlives the selection by one transition, so closing slides
 // the content out instead of blanking it mid-animation. Closing returns to
 // the room, not to the campus.
 export function PlotPanel() {
@@ -69,9 +70,10 @@ export function PlotPanel() {
       aria-hidden={!open}
     >
       <div
+        // lg:w-[55%] must match FOCUS.panelFraction, which frames the room beside it.
         role="region"
         aria-label={shown.exhibit.name}
-        className={`pointer-events-auto relative flex max-h-[60%] w-full flex-col overflow-y-auto border-t border-ink/15 bg-paper/95 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 transition-transform ease-out lg:h-full lg:max-h-full lg:w-1/2 lg:border-l lg:border-t-0 lg:px-14 lg:py-16 ${
+        className={`pointer-events-auto relative flex h-[calc(100%-3.75rem)] w-full flex-col overflow-y-auto lg:h-full border-t border-ink/15 bg-paper/95 px-6 py-6 transition-transform ease-out lg:w-[55%] lg:border-l lg:border-t-0 lg:px-10 lg:py-12 ${
           open ? 'translate-y-0 lg:translate-x-0' : 'translate-y-full lg:translate-x-full lg:translate-y-0'
         }`}
         style={{ transitionDuration: prefersReducedMotion ? '0ms' : `${UI.panelTransitionMs}ms` }}
@@ -83,7 +85,7 @@ export function PlotPanel() {
         <h3
           ref={headingRef}
           tabIndex={-1}
-          className="mt-1 max-w-[18ch] font-display text-step-4 leading-tight text-ink outline-none lg:text-step-5"
+          className="mt-1 max-w-[18ch] font-display text-step-4 leading-tight text-ink outline-none"
         >
           {shown.exhibit.name}
         </h3>

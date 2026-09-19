@@ -2,7 +2,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -639,8 +638,18 @@ const Windows = forwardRef<InstancedMesh, { matrices: Matrix4[] }>(function Wind
   { matrices },
   ref,
 ) {
-  const meshRef = useRef<InstancedMesh>(null)
-  useImperativeHandle(ref, () => meshRef.current!, [])
+  const meshRef = useRef<InstancedMesh | null>(null)
+  // Forwards the live mesh every time it is attached. A handle fixed at first
+  // mount goes stale when the instance is recreated, and every write through
+  // it then lands on a mesh no longer in the scene.
+  const attach = useCallback(
+    (mesh: InstancedMesh | null) => {
+      meshRef.current = mesh
+      if (typeof ref === 'function') ref(mesh)
+      else if (ref) ref.current = mesh
+    },
+    [ref],
+  )
   const geometry = getWindowGeometry()
 
   const lit = useMemo(() => new InstancedBufferAttribute(new Float32Array(matrices.length), 1), [matrices])
@@ -693,7 +702,7 @@ const Windows = forwardRef<InstancedMesh, { matrices: Matrix4[] }>(function Wind
 
   return (
     <instancedMesh
-      ref={meshRef}
+      ref={attach}
       args={[geometry, windowMaterials, matrices.length]}
       castShadow={false}
       receiveShadow={false}
@@ -843,6 +852,7 @@ export function Buildings() {
   // building's windows as well as hiding the new one's. Undefined means not
   // known, which forces the next frame to apply visibility afresh.
   const hiddenFor = useRef<string | null | undefined>(undefined)
+  const lastWindows = useRef<InstancedMesh | null>(null)
 
   // The window mesh writes every instance as visible whenever the matrices are
   // set, so whatever was hidden before has to be hidden again. Runs after the
@@ -862,6 +872,11 @@ export function Buildings() {
 
   useFrame((_, delta) => {
     const windows = windowsRef.current
+    // A new mesh starts with every window showing: apply visibility afresh.
+    if (windows !== lastWindows.current) {
+      lastWindows.current = windows
+      hiddenFor.current = undefined
+    }
     const smoothing = 1 - Math.pow(UI.hoverLiftDecay, Math.min(delta, CAMERA.maxFrameDelta))
     const roomChanged = activePlotId !== hiddenFor.current
     let windowsMoved = false

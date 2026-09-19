@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { OrbitControls } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Spherical, Vector3 } from 'three'
+import { Spherical, Vector3, type PerspectiveCamera } from 'three'
 import { plots, type Plot } from '@/data/plots'
 import { useCoarsePointer, useIsMobile } from '@/hooks/useIsMobile'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
@@ -144,13 +144,28 @@ function overviewPoseParts(): [Vector3, Vector3] {
 // Frames the plot's room from the quarter its two missing walls face. Every
 // value derives from the room's own scaled size, so no plot needs a
 // hand-placed camera.
-function plotPose(plot: Plot, exhibitOpen: boolean, isMobile: boolean): Pose {
+// The camera's view as the framing needs it: vertical field of view and the
+// canvas's width over height.
+type Lens = { fov: number; aspect: number }
+
+// Frames the plot's room from the quarter its two missing walls face. Every
+// value derives from the room's own scaled size, so no plot needs a
+// hand-placed camera.
+function plotPose(plot: Plot, exhibitOpen: boolean, isMobile: boolean, lens: Lens): Pose {
   const base = new Vector3(...plot.position)
   const scale = roomScale(plot)
   const shifted = exhibitOpen && !isMobile
-  const distance =
-    (Math.max(ROOM.width, ROOM.depth) * scale * FOCUS.roomDistanceScale) /
-    (shifted ? FOCUS.exhibitRoomScale : 1)
+  const halfTan = Math.tan((lens.fov * Math.PI) / 360)
+
+  let distance = Math.max(ROOM.width, ROOM.depth) * scale * FOCUS.roomDistanceScale
+  // Beside an open panel: pull back until the room — seen corner-on, so about
+  // (width + depth) / sqrt 2 across — spans exhibitFill of the strip the panel
+  // leaves, and never come closer than the ordinary framing.
+  if (shifted) {
+    const across = ((ROOM.width + ROOM.depth) / Math.SQRT2) * scale
+    const strip = FOCUS.exhibitFill * (1 - FOCUS.panelFraction)
+    distance = Math.max(distance, across / (strip * 2 * halfTan * lens.aspect))
+  }
 
   // Buildings face the estate centre and the room's open sides face the same
   // way, swung by the azimuth offset. Taken from position rather than stored
@@ -170,9 +185,12 @@ function plotPose(plot: Plot, exhibitOpen: boolean, isMobile: boolean): Pose {
 
   // With an exhibit's panel open on the right, move the look-at point right so
   // the room sits clear of it. On mobile the panel is a bottom sheet instead.
+  // Then slide the look-at point right until the room sits in the middle of
+  // that strip: half the panel's share of the canvas's half-width.
   if (shifted) {
     const view = target.clone().sub(position).setY(0).normalize()
-    target.addScaledVector(new Vector3(-view.z, 0, view.x), distance * FOCUS.panelShiftFactor)
+    const halfWidth = distance * halfTan * lens.aspect
+    target.addScaledVector(new Vector3(-view.z, 0, view.x), halfWidth * FOCUS.panelFraction)
   }
 
   return { position, target }
@@ -182,6 +200,8 @@ export function CameraRig() {
   const controlsRef = useRef<Controls>(null)
   const camera = useThree((state) => state.camera)
   const gl = useThree((state) => state.gl)
+  // The framing beside an open panel depends on the canvas's shape.
+  const size = useThree((state) => state.size)
 
   const level = useEstate((state) => state.level)
   const atCampus = level === 'campus'
@@ -307,7 +327,8 @@ export function CameraRig() {
       }
       pose = poseOf({ target: new Vector3(...CAMERA.homeTarget), ...saved })
     } else {
-      pose = plotPose(plot, activeExhibitId !== null, isMobile)
+      const fov = (camera as PerspectiveCamera).fov
+      pose = plotPose(plot, activeExhibitId !== null, isMobile, { fov, aspect: size.width / size.height })
     }
     const radius = pose.position.distanceTo(pose.target)
 
@@ -411,7 +432,7 @@ export function CameraRig() {
     // switching away mid-transition can never strand the camera part-way.
     const timer = window.setTimeout(settle, (seconds + FLIGHT.settleGraceSeconds) * 1000)
     return () => window.clearTimeout(timer)
-  }, [atCampus, activePlotId, activeExhibitId, isMobile, prefersReducedMotion, resetRequest, camera, velocity, setCampusCamera])
+  }, [atCampus, activePlotId, activeExhibitId, isMobile, prefersReducedMotion, resetRequest, camera, velocity, setCampusCamera, size])
 
   useFrame((_, delta) => {
     const controls = controlsRef.current
