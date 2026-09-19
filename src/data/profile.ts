@@ -33,7 +33,7 @@ export const profile = {
     { year: "Aug 2024", label: "Started B.Tech at Thapar Institute" },
     { year: "Sep 2024", label: "Alumni cell coordinator and MLSC web team" },
     { year: "2025", label: "Registered for GSSoC" },
-    { year: "Now", label: "Building PulseDesk; seeking Application Engineering internships" },
+    { year: "Now", label: "Seeking Application Engineering internships" },
   ],
   stats: [
     { label: "LeetCode problems solved", value: "200+" },
