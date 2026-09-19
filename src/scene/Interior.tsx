@@ -271,8 +271,8 @@ function bindToCell(geometry: BufferGeometry, index: number) {
   uv.needsUpdate = true
 }
 
-// Painted once per plot and kept: a surface is redrawn only when the theme
-// changes, never per visit and never per frame.
+// Painted once per plot and kept for the visit: never per visit, never per
+// frame.
 function roomAtlas(plot: Plot): CanvasTexture {
   const cached = atlasCache.get(plot.id)
   if (cached) return cached
@@ -497,6 +497,12 @@ export function precompileRoomMaterials(gl: WebGLRenderer, camera: Camera, scene
   }
   gl.compile(group, camera, scene)
   stand.dispose()
+
+  // Every room's atlas is painted and uploaded now too, so no flight into a
+  // room pays for a texture upload on its first frame. Six small textures.
+  for (const plot of plots) {
+    if (plot.exhibits.length > 0) gl.initTexture(roomAtlas(plot))
+  }
 }
 
 export function Interiors() {

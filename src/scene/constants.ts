@@ -39,6 +39,8 @@ export const SLAB = {
 export const ROAD = {
   width: 2.4,
   laneOffset: 0.6,
+  // Samples round the loop for each lane's length relative to the centreline.
+  laneStretchSamples: 512,
   kerbWidth: 0.35,
   dashLength: 0.6,
   dashGap: 0.4,
@@ -108,7 +110,10 @@ export const CAMERA = {
   maxPolarAngle: 1.35,
   rotateSpeed: 0.55,
   zoomSpeed: 0.7,
-  dampingFactor: 0.06,
+  // Share of drag momentum still left one second after letting go: 0.94 per
+  // frame at 60fps. Applied per second rather than per frame, so the glide is
+  // the same length at 60Hz or 120Hz and a dropped frame doesn't stall it.
+  dampingDecay: Math.pow(0.94, 60),
   idleDriftSpeed: 0.015,
   // Seconds untouched at campus level before the camera starts to drift.
   idleDelay: 5,

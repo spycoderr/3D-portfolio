@@ -18,7 +18,7 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { COLORS, ROAD, TRAFFIC } from './constants'
-import { getCurvatureAt, getLanePoint, getTangentAt, roadLength, wrapU } from './curves'
+import { getCurvatureAt, getLanePoint, getLaneStretchAt, getTangentAt, roadLength, wrapU } from './curves'
 
 const UP = new Vector3(0, 1, 0)
 const UNIT_SCALE = new Vector3(1, 1, 1)
@@ -125,7 +125,7 @@ type Vehicle = {
 }
 
 function createVehicles(): Vehicle[] {
-  return TRAFFIC.directions.map((direction, index) => ({
+  const vehicles = TRAFFIC.directions.map((direction, index) => ({
     u: TRAFFIC.startOffsets[index],
     direction,
     // Opposite directions sit on opposite sides of the centreline.
@@ -134,6 +134,10 @@ function createVehicles(): Vehicle[] {
     phase: index * 2.1,
     spin: 0,
   }))
+  // Build each lane's stretch table now, behind the loading screen, rather
+  // than on the first frame the cars move.
+  for (const vehicle of vehicles) getLaneStretchAt(vehicle.u, vehicle.laneOffset)
+  return vehicles
 }
 
 export function Traffic() {
@@ -172,9 +176,10 @@ export function Traffic() {
       const speed = TRAFFIC.baseSpeed * vehicle.speedScale * wander
 
       if (moving) {
-        // Arc-length parameterisation means equal u steps are equal distances,
-        // so the cars hold their speed through corners instead of surging.
-        vehicle.u = wrapU(vehicle.u + (speed * step * vehicle.direction) / roadLength)
+        // u is centreline arc length; the lane's stretch turns it into the
+        // distance this car actually covers, so its speed holds through bends.
+        const stretch = getLaneStretchAt(vehicle.u, vehicle.laneOffset)
+        vehicle.u = wrapU(vehicle.u + (speed * step * vehicle.direction) / (roadLength * stretch))
         vehicle.spin += (speed * step) / TRAFFIC.wheelRadius
       }
 

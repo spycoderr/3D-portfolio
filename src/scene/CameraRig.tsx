@@ -434,6 +434,18 @@ export function CameraRig() {
     return () => window.clearTimeout(timer)
   }, [atCampus, activePlotId, activeExhibitId, isMobile, prefersReducedMotion, resetRequest, camera, velocity, setCampusCamera, size])
 
+  // OrbitControls damps per update, not per second: each frame moves the
+  // camera the same share of the remaining drag however long the frame took,
+  // so a slow glide judders when frames arrive unevenly. Setting the share
+  // from this frame's delta, just before drei's update at priority -1, makes
+  // it frame-rate independent.
+  useFrame((_, delta) => {
+    const controls = controlsRef.current
+    if (controls) {
+      controls.dampingFactor = 1 - Math.pow(CAMERA.dampingDecay, Math.min(delta, CAMERA.maxFrameDelta))
+    }
+  }, -2)
+
   useFrame((_, delta) => {
     const controls = controlsRef.current
     if (!controls) return
@@ -485,7 +497,6 @@ export function CameraRig() {
       // drag momentum decays instead of kicking in on arrival.
       enableZoom={hasInteracted && !flying}
       enableRotate={(coarsePointer ? hasInteracted : true) && !flying}
-      dampingFactor={CAMERA.dampingFactor}
       rotateSpeed={CAMERA.rotateSpeed}
       zoomSpeed={CAMERA.zoomSpeed}
       minPolarAngle={CAMERA.minPolarAngle}

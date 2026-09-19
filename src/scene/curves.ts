@@ -52,6 +52,40 @@ export function getLanePoint(u: number, offset: number, out = new Vector3()): Ve
   return out.addScaledVector(normalScratch, offset)
 }
 
+const stretchTables = new Map<number, Float32Array>()
+const stretchA = new Vector3()
+const stretchB = new Vector3()
+
+function buildStretchTable(offset: number): Float32Array {
+  const samples = ROAD.laneStretchSamples
+  const table = new Float32Array(samples)
+  const half = 0.5 / samples
+  for (let index = 0; index < samples; index += 1) {
+    const u = index / samples
+    const lane = getLanePoint(u + half, offset, stretchA).distanceTo(getLanePoint(u - half, offset, stretchB))
+    table[index] = lane / (2 * half * roadLength)
+  }
+  return table
+}
+
+// How much longer a lane is than the centreline at u: above 1 on the outside
+// of a bend, below 1 on the inside. The centreline is arc-length accurate, but
+// a lane offset from it is not, so a car advancing by centreline distance
+// would surge through the tighter bends on the outside and crawl on the
+// inside. Dividing its step by this keeps its real speed constant.
+export function getLaneStretchAt(u: number, offset: number): number {
+  let table = stretchTables.get(offset)
+  if (!table) {
+    table = buildStretchTable(offset)
+    stretchTables.set(offset, table)
+  }
+  const x = wrapU(u) * table.length
+  const index = Math.floor(x) % table.length
+  const next = (index + 1) % table.length
+  const k = x - Math.floor(x)
+  return table[index] + (table[next] - table[index]) * k
+}
+
 const curvatureA = new Vector3()
 const curvatureB = new Vector3()
 
