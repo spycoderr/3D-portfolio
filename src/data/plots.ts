@@ -105,76 +105,155 @@ const definitions: PlotDefinition[] = [
     kind: "project",
     tagline: "Expense tracker with explainable anomaly detection",
     summary:
-      "A full-stack MERN expense tracker whose anomaly detection is rule-based and transparent, so every flag can be traced to its reasons.",
+      "A personal expense tracker that flags transactions which break from your own spending history, each with a plain-English reason.",
     problem:
-      "An unusual expense is only useful to flag if the person can see why it was flagged. SpendSense scores transactions on signals anyone can check.",
+      "Card issuers run anomaly alerts nobody can inspect. SpendSense does the same job with statistics simple enough to check by hand.",
     highlights: [
-      "Anomaly score from three weighted signals",
-      "React dashboard with Recharts",
-      "Tested against ~120 demo transactions with 6 planted anomalies",
+      "Four weighted signals, one flag threshold",
+      "Scoring runs off the request path",
+      "Idempotent writes, enforced by the database",
     ],
-    stack: ["React", "Node.js", "Express", "MongoDB", "JWT"],
-    links: [{ label: "GitHub", href: "#" }],
+    stack: ["React", "Vite", "Recharts", "Node.js", "Express", "MongoDB", "Mongoose", "JWT", "node:test"],
+    links: [
+      { label: "Live demo", href: "https://spendsense-kohl.vercel.app" },
+      { label: "GitHub", href: "https://github.com/spycoderr/spendsense" },
+    ],
     footprint: { w: 3.4, d: 2.8 },
     floors: 2,
     roofStyle: 'gable',
     props: ['chimney', 'scooter'],
     palette: { wall: 'sand', roof: 'clay', trim: 'ink' },
     exhibits: [
-      exhibit('score', 'Anomaly scorer', 'barTerminal', 'Every flag comes with the reasons behind it.', [
-        'Each transaction gets an anomaly score built from three weighted signals: how far it deviates from normal spending, how rare its category is, and when it happened.',
-        'The detection is rule-based on purpose. Because the score is a weighted sum of signals rather than a black box, a flagged transaction can always be traced back to what pushed it up.',
+      exhibit('score', 'Anomaly scorer', 'barTerminal', 'Every flag comes with the reason behind it.', [
+        'Each new transaction is scored against your own history in four ways: how far its amount sits above your average in that category, how rarely you spend in that category at all, whether other purchases landed in the hour before it, and whether it happened between midnight and 5 AM.',
+        'The signals are weighted 0.57, 0.25, 0.10 and 0.08 and compared against a single threshold of 0.55. The two strong signals only switch on once there is enough history to trust them, and timing and velocity can never flag a purchase on their own: even together they top out at 0.18.',
+        'A flag is never a bare verdict. It names the signal that drove it, in a sentence like "₹8,600 is 4.7x your usual bills spend (avg ₹1,833)", so anyone can check the reasoning.',
       ]),
       exhibit('dashboard', 'Category board', 'tileBoard', 'Where the money went, at a glance.', [
-        'A React dashboard, charted with Recharts, shows spending so that a flagged transaction can be read against everything around it.',
-        'Behind it are RESTful APIs on Node.js and Express with MongoDB, and JWT authentication on the API.',
+        'The React dashboard pairs stat cards with a category breakdown and a spending trend, charted with Recharts, so a flagged transaction can be read against everything around it.',
+        'Flags land in an Alerts inbox, where each one is confirmed or dismissed and moves to a Reviewed page. Transactions can be logged one at a time or brought in by CSV import, which scores its rows as it goes.',
+        'Behind it is a Node.js and Express API on MongoDB, with JWT authentication and rate limiting.',
       ]),
-      exhibit('demo', 'Receipt cabinet', 'receiptCabinet', 'Six planted anomalies, and tests that expect to find them.', [
-        'To show the scoring working without anyone\'s real finances, I built a realistic demo set of about 120 transactions with six anomalies planted in it.',
-        'Unit tests cover the edge cases in the scoring, so its behaviour is checked end to end rather than judged by eye on a chart.',
+      exhibit('demo', 'Receipt cabinet', 'receiptCabinet', 'Planted anomalies, and tests that expect to find them.', [
+        'A seed script builds a demo account with about 120 transactions over six months: recurring bills, everyday food, occasional shopping, and a few deliberately planted anomalies, from an outsized purchase to a rare-category spend and some late-night transactions.',
+        'The scorer is a pure function with no database or framework in it, so its test suite, run on Node\'s built-in test runner, can pin down the edge cases: zero-variance history, missing signals, and the cold start.',
+        'Nobody is flagged in their first ten transactions. Without that, the model would raise alarms before it had anything meaningful to compare against.',
       ]),
     ],
+    overview: {
+      intro: [
+        'SpendSense is a personal expense tracker that flags transactions which break from your own spending pattern: a simplified, transparent version of the anomaly alerts a card issuer runs.',
+        'You log your spending, and each new transaction is scored against your history in its category. If something looks out of character, whether an unusually large purchase, a category you rarely touch, or a purchase in the middle of the night, it is flagged with a plain-English reason and waits in an Alerts inbox to be confirmed or dismissed.',
+      ],
+      facts: [
+        { value: "4", label: "weighted signals behind every score" },
+        { value: "0.55", label: "score at which a transaction is flagged" },
+        { value: "~120", label: "transactions in the seeded demo account" },
+        { value: "10", label: "transactions before anything can be flagged" },
+      ],
+      sections: [
+        {
+          title: "Why statistics, not a black box",
+          body: [
+            "The detection is deliberately simple statistics. Every score can be explained in one sentence and audited by looking at a handful of numbers, so someone who disagrees with a flag can see exactly which signal caused it. For a personal finance tool that is a far better trust story than \"the model says so\".",
+            "It also keeps the threshold, the weights and every edge case in reach of a human reviewer, who can adjust them deliberately rather than retrain anything.",
+          ],
+        },
+        {
+          title: "Built like a production API",
+          body: [
+            "Scoring runs off the request path. A new transaction is saved as pending and the response goes straight back; an in-process queue does the scoring afterwards, and the interface shows a \"Scoring…\" pill until it is done. The queue is shaped like a Redis-backed one, so swapping in BullMQ later means replacing one file, not its callers.",
+            "Duplicate submissions are deduped, not just rate-limited. Each submission carries an idempotency key, and a partial unique index in MongoDB means even two racing requests cannot both insert: a double-click or a silent browser retry gets back the original transaction.",
+          ],
+        },
+        {
+          title: "What it trades away",
+          body: [
+            "The cold start suppresses real anomalies too: a genuinely large first purchase goes unflagged. Transactions are scored once, against the history that existed then, and never rescored, which keeps reviewed scores stable but means an old flag can look odd in hindsight.",
+            "The weights and threshold are hand-picked rather than tuned on real labelled data, which does not exist for a demo. A review status is stored on every transaction precisely so that feedback loop can be built later.",
+          ],
+        },
+      ],
+    },
   },
   {
     id: "pulsedesk",
     plotNumber: "Plot 02",
     title: "PulseDesk",
     shortName: "PulseDesk",
-    eyebrow: "Plot 02 · In progress",
+    eyebrow: "Plot 02 · Feedback triage",
     roomHeadline: "Reading the mood of the inbox",
-    subhead: "Classifying customer feedback so urgent complaints surface first.",
+    subhead: "Sorting customer feedback so the urgent complaints surface first.",
     kind: "project",
-    tagline: "Customer feedback sentiment dashboard",
+    tagline: "Customer feedback sentiment and urgency triage",
     summary:
-      "A customer feedback system, being built now, that classifies sentiment and urgency and tracks how sentiment moves over time.",
+      "Customer feedback triage that classifies every submission by sentiment and urgency, so support works a prioritised queue instead of reading top to bottom.",
     problem:
-      "In a large pile of feedback, the urgent complaints get buried among routine messages. PulseDesk sorts them so support can triage faster.",
+      "Feedback queues sorted by submission time put a compliment next to a furious cancellation. PulseDesk sorts them by what needs attention today.",
     highlights: [
-      "TF-IDF and Logistic Regression classifier",
-      "MongoDB ingestion pipeline and admin dashboard",
-      "Automatic tagging of urgent complaints",
+      "TF-IDF and Logistic Regression, 87.8% held-out accuracy",
+      "Urgency as an auditable rule, not a model",
+      "Flask classifier behind a Node.js API",
     ],
-    stack: ["React", "Node.js", "Express", "MongoDB", "scikit-learn"],
-    links: [{ label: "GitHub", href: "#" }],
+    stack: ["React", "Vite", "Recharts", "Node.js", "Express", "MongoDB", "Python", "scikit-learn", "Flask", "JWT"],
+    links: [{ label: "GitHub", href: "https://github.com/spycoderr/pulsedeck" }],
     footprint: { w: 3.0, d: 3.0 },
     floors: 2,
     roofStyle: 'flat',
     props: ['dish', 'balcony'],
     palette: { wall: 'paper', roof: 'indigo', trim: 'ink' },
     exhibits: [
-      exhibit('triage', 'Triage wall', 'kanbanWall', 'Urgent complaints tagged the moment they arrive.', [
-        'Urgent complaints are tagged automatically, combining negative sentiment with keyword-based signals, so they can go to the front of the support queue.',
-        'The aim is faster triage: the messages that need an answer today shouldn\'t wait behind the ones that don\'t.',
+      exhibit('triage', 'Triage wall', 'kanbanWall', 'Urgent complaints go to the top, with the reason why.', [
+        'Urgency is a plain rule on top of the sentiment prediction. Negative feedback containing one of eight escalation words, such as "refund", "broken", "cancel" or "unacceptable", is high urgency; any other negative feedback is medium; everything else is low.',
+        'Only negative feedback can escalate, so "the refund was handled quickly" never triggers anything. Every escalated entry carries a reason naming the exact word that triggered it.',
+        'The rule lives in exactly one place, the Python classifier, and comes back with the sentiment from a single call. Node never reimplements it, so two copies can never drift apart.',
       ]),
-      exhibit('classifier', 'Customer voice', 'headset', 'Every message read for mood and urgency.', [
-        'PulseDesk classifies each piece of customer feedback for sentiment and for urgency, using TF-IDF features and a Logistic Regression model built with scikit-learn.',
-        'It is still in progress: the classifier is being built alongside the rest of the pipeline.',
+      exhibit('classifier', 'Customer voice', 'headset', 'Every message read for mood, and every call explainable.', [
+        'Each piece of feedback becomes a TF-IDF vector of unigrams and bigrams, English stop words removed and capped at 2,000 features, and a multinomial Logistic Regression classifies it as positive, negative or neutral with the full probability for each.',
+        'It scores 87.8% on a held-out test split, and 85.0% ± 4.4% under 50-fold repeated cross-validation.',
+        'A linear model was chosen on purpose: every word carries a signed weight you can point at when someone asks why a message was flagged; it suits a small dataset; and classifying is a single sparse matrix multiply, with no GPU, no API cost and no outside service.',
       ]),
-      exhibit('pipeline', 'Ingestion rack', 'statusRack', 'Feedback in, trends out.', [
-        'A MongoDB ingestion pipeline brings the feedback in, and an administrative dashboard shows how customer sentiment moves over time.',
-        'Like the rest of PulseDesk, this part is being built now.',
+      exhibit('pipeline', 'Ingestion rack', 'statusRack', 'From a public form to a prioritised queue.', [
+        'Customers leave a star rating and a comment on a public form. The Node.js and Express API stores it in MongoDB and sends the text to the Flask classifier, which returns sentiment and urgency in one reply.',
+        'Admins sign in with JWT to a dashboard with a sentiment breakdown, a trend chart and a filterable, prioritised feedback queue.',
+        'The seed script classifies all 86 demo entries through the live classifier rather than labelling any by hand, so seeding the database proves the whole pipeline end to end.',
       ]),
     ],
+    overview: {
+      intro: [
+        'Support teams that collect open-ended feedback usually end up with a queue sorted by nothing more useful than submission time: a five-star compliment beside a furious cancellation request, and someone has to read every entry to find the ones that need attention today.',
+        'PulseDesk collects a star rating and a comment through a public form, classifies each one by sentiment and urgency, and gives an admin a dashboard and a filterable, prioritised queue, so the team can triage instead of reading top to bottom.',
+      ],
+      facts: [
+        { value: "87.8%", label: "accuracy on held-out feedback" },
+        { value: "85.0%", label: "under 50-fold cross-validation, ± 4.4%" },
+        { value: "366", label: "hand-written training examples" },
+        { value: "8", label: "escalation keywords, in one place" },
+      ],
+      sections: [
+        {
+          title: "The dataset lesson",
+          body: [
+            "The first draft of the training set had about 204 completely distinct sentences and scored only 56%. The diagnosis: 65% of words appeared in exactly one example, so the model had no repeated signal to learn from — 100% on training data, 56% on test, textbook overfitting.",
+            "Rewriting the 366 examples to reuse a core sentiment vocabulary across varied sentences, the way real feedback behaves, raised held-out accuracy to 87.8%. A handful are deliberately adversarial, like \"Support fixed my broken account within the hour\", so words such as \"broken\" are learned in context rather than as labels.",
+          ],
+        },
+        {
+          title: "Why not a transformer",
+          body: [
+            "A modern language model would likely read sarcasm and nuance better. But a Logistic Regression can explain every prediction word by word, it fits a dataset this size, it runs in well under a millisecond on a laptop, and nothing depends on an outside service being up, priced right or consistent over time.",
+            "For a triage tool where every prediction should be defensible line by line, that tradeoff is the point.",
+          ],
+        },
+        {
+          title: "What it trades away",
+          body: [
+            "The training set proves the pipeline, not production. It is English only, and a bag-of-words model misses sarcasm and mixed sentiment: \"Works okay but the sync is a bit unreliable\" reads as mildly positive. The escalation words cover common language but not every synonym, and adding one is a one-line change rather than retraining.",
+            "On ambiguous text, confidence honestly sits around 0.4 to 0.6, and the interface shows the full probability spread instead of hiding that uncertainty behind a single label.",
+          ],
+        },
+      ],
+    },
   },
   {
     id: "labtrack",
@@ -216,6 +295,38 @@ const definitions: PlotDefinition[] = [
         'It is tested and shipped like production software, with Jest unit tests, API documentation in Postman, and deployment on Render with CI/CD through GitHub Actions.',
       ]),
     ],
+    overview: {
+      intro: [
+        'LabTrack is an internal portal for a lab: it tracks equipment, issue and return requests, and their approvals, replacing a process that ran on a manual spreadsheet.',
+        'It began with the people who would use it. Requirements were gathered from lab staff and written up in a technical design document before any code, and the system was built to that design.',
+      ],
+      facts: [
+        { value: "3", label: "roles: admin, lab staff and student" },
+        { value: "4", label: "core tables: assets, users, requests, audit logs" },
+        { value: "2", label: "integrations: Google Sheets and email" },
+      ],
+      sections: [
+        {
+          title: "Data model",
+          body: [
+            "A normalized MySQL schema holds assets, users, requests and audit logs, tied together with foreign keys and indexes.",
+            "SQL with joins and aggregations produces the reports the lab needs most: equipment running low, and returns that are overdue.",
+          ],
+        },
+        {
+          title: "Access and safety",
+          body: [
+            "RESTful APIs with JWT authentication and role-based access control separate what admins, lab staff and students can do, with input validation and centralized error handling throughout, and every request and approval recorded in the audit log.",
+          ],
+        },
+        {
+          title: "Shipping it",
+          body: [
+            "Reports export to Google Sheets through its API, and Nodemailer sends email alerts. The API is covered by Jest unit tests and documented in Postman, and deployed on Render with CI/CD through GitHub Actions.",
+          ],
+        },
+      ],
+    },
   },
   {
     id: "about",
